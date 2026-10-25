@@ -45,7 +45,7 @@ seed-admin:
 	DB_HOST=127.0.0.1 go run ./cmd/seed
 
 test:
-	go test ./...
+	env -u TEST_DATABASE_URL go test ./...
 
 test-db:
 	@case "$$TEST_DB_NAME" in *_test) ;; *) echo "TEST_DB_NAME must end in _test" >&2; exit 1;; esac
@@ -55,7 +55,7 @@ test-db:
 	@docker compose run --rm migrate -path=/migrations -database "$$TEST_DATABASE_DOCKER_URL" up
 
 test-integration: test-db
-	@go test -race ./internal/repository -run '^(TestGormRepositoryIntegration|TestGormUserRepositoryIntegration)$$' -v
+	@go test -race ./internal/repository -run '^(TestGormRepositoryIntegration|TestGormUserRepositoryIntegration|TestGormMovieSearchIntegration)$$' -v
 
 swagger:
 	go run github.com/swaggo/swag/cmd/swag@v1.16.4 init -g main.go -d cmd/api,internal/handler,internal/model

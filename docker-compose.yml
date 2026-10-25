@@ -35,7 +35,7 @@ services:
 
   migrate:
     image: migrate/migrate:v4.18.3
-    profiles: ["tools"]
+    restart: "no"
     depends_on:
       db:
         condition: service_healthy
@@ -43,6 +43,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
     volumes:
       - ./migrations:/migrations
+    # Default run applies pending migrations; `make migrate-*` overrides the command.
+    command: ["-path=/migrations", "-database", "${DATABASE_URL}", "up"]
 
   backend:
     build:
@@ -52,6 +54,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:

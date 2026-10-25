@@ -54,7 +54,7 @@ func newAuthTestEnv(t *testing.T) *authTestEnv {
 func (e *authTestEnv) createUser(t *testing.T, email, password, role string) model.User {
 	t.Helper()
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	if err != nil {
 		t.Fatalf("GenerateFromPassword() error = %v", err)
 	}
