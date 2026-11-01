@@ -16,6 +16,7 @@ import (
 	_ "homework/docs"
 	"homework/internal/apperr"
 	"homework/internal/auth"
+	"homework/internal/chat"
 	"homework/internal/handler"
 	webhandler "homework/internal/handler/web"
 	"homework/internal/middleware"
@@ -33,6 +34,9 @@ type Deps struct {
 	Secure        bool
 	CookieSecure  bool
 	WebUIEnabled  *bool
+	// Chat enables the movie chat when set; the caller starts the hub with go Chat.Run().
+	Chat               *chat.Hub
+	ChatAllowedOrigins []string
 }
 
 // NewRouter creates a router and a fresh in-memory repository for each call.
@@ -129,6 +133,9 @@ func newRouter(deps Deps) http.Handler {
 		router.GET("/api/v1/health", handler.Health)
 		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/swagger/doc.json")))
 	}
+	if deps.Secure && deps.Chat != nil {
+		router.GET("/ws/movies/:id", chat.NewHandler(deps.Chat, deps.Tokens, movieService, deps.ChatAllowedOrigins).Serve)
+	}
 	if catalogHandler != nil {
 		staticRoutes := router.Group("", webSecurityHeaders())
 		staticRoutes.GET("/static/*filepath", gin.WrapH(http.StripPrefix("/static/", http.FileServer(staticFS))))
@@ -143,6 +150,9 @@ func newRouter(deps Deps) http.Handler {
 		webRoutes.GET("/login", webAuthHandler.LoginPage)
 		webRoutes.POST("/login", webAuthHandler.Login)
 		webRoutes.POST("/logout", webhandler.RequireLogin(), webAuthHandler.Logout)
+		if deps.Chat != nil {
+			webRoutes.GET("/movies/:id/chat", webhandler.RequireLogin(), catalogHandler.ChatPage)
+		}
 		editorWebRoutes := webRoutes.Group("", webhandler.RequireRole(renderer, "editor", "admin"))
 		editorWebRoutes.GET("/movies/new", catalogHandler.NewMoviePage)
 		editorWebRoutes.POST("/movies/new", catalogHandler.CreateMovie)

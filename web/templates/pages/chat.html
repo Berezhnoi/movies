@@ -1,0 +1,12 @@
+{{define "title"}}{{.Title}}{{end}}
+{{define "content"}}
+<section id="chat" data-movie-id="{{.MovieID}}">
+  <h1>Chat: {{.MovieTitle}}</h1>
+  <ul id="chat-messages" class="chat-messages" aria-live="polite"></ul>
+  <form id="chat-form" class="chat-form">
+    <input id="chat-text" name="text" type="text" maxlength="500" autocomplete="off" required aria-label="Message">
+    <button type="submit">Send</button>
+  </form>
+  <p><a href="/catalog">Back to the catalog</a></p>
+</section>
+{{end}}

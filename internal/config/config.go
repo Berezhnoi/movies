@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -30,6 +31,7 @@ type Config struct {
 	AdminPassword     string
 	WebUIEnabled      bool
 	CookieSecure      bool
+	WSAllowedOrigins  []string
 }
 
 func Load() (Config, error) {
@@ -93,6 +95,11 @@ func Load() (Config, error) {
 	}
 	if cfg.CookieSecure, err = boolValue("COOKIE_SECURE", false); err != nil {
 		return Config{}, err
+	}
+	for _, origin := range strings.Split(stringValue("WS_ALLOWED_ORIGINS", "http://localhost:8080"), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			cfg.WSAllowedOrigins = append(cfg.WSAllowedOrigins, origin)
+		}
 	}
 	return cfg, nil
 }

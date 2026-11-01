@@ -38,6 +38,7 @@ func NewRenderer() (*Renderer, error) {
 	}
 	for page, file := range map[string]string{
 		"catalog":    "templates/pages/catalog.html",
+		"chat":       "templates/pages/chat.html",
 		"error":      "templates/pages/error.html",
 		"login":      "templates/pages/login.html",
 		"movie_form": "templates/pages/movie_form.html",
@@ -86,6 +87,9 @@ func withCSRFToken(data any, token string) any {
 		page.CSRFToken = token
 		return page
 	case MovieFormPage:
+		page.CSRFToken = token
+		return page
+	case ChatPage:
 		page.CSRFToken = token
 		return page
 	default:

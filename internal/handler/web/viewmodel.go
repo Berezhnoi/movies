@@ -91,6 +91,12 @@ type MovieFormPage struct {
 	Errors      []string
 }
 
+type ChatPage struct {
+	BasePage
+	MovieID    uint32
+	MovieTitle string
+}
+
 func MapMovie(movie model.Movie, now time.Time) MovieRowView {
 	row := MovieRowView{
 		ID:       movie.ID,
