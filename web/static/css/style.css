@@ -71,6 +71,10 @@ tbody tr:last-child td { border-bottom: 0; }
 .search-form .htmx-indicator { color: #39465a; font-size: .9rem; }
 .toast { margin: 1rem auto; width: min(72rem, calc(100% - 2rem)); padding: .75rem 1rem; border-left: .3rem solid #174ea6; background: #e6effa; }
 .error-page { max-width: 42rem; padding: 1rem; border: 1px solid #b6c1d1; border-radius: .4rem; background: #fff; }
+.chat-messages { max-width: 42rem; min-height: 12rem; max-height: 60vh; overflow-y: auto; margin: 1rem 0; padding: .75rem 1rem; list-style: none; border: 1px solid #b6c1d1; border-radius: .4rem; background: #fff; }
+.chat-messages li { margin: .35rem 0; overflow-wrap: anywhere; }
+.chat-form { display: flex; gap: .5rem; max-width: 42rem; }
+.chat-form input { flex: 1; }
 .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
 

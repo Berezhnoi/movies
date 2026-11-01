@@ -110,6 +110,14 @@ year displays `-`. Known limitations: a role change does not invalidate an exist
 limiting, PostgreSQL is still external to the binary, and the pager is hidden after live search because its
 links refer to the previous result set.
 
+## Movie chat
+
+Each movie has a real-time chat room over WebSockets. `GET /ws/movies/{id}` upgrades after checking the JWT
+(web UI cookie or `Authorization: Bearer`), the movie ID, and the `Origin`; the page is `/movies/{id}/chat`.
+`WS_ALLOWED_ORIGINS` (comma-separated, default `http://localhost:8080`) lists the allowed browser origins.
+To try it, log in at `http://localhost:8080`, open `/movies/1/chat` in 3 tabs, and send a message from one.
+The hub keeps rooms in memory, so it works with a single replica only; several replicas would need Redis pub/sub.
+
 ## Lesson 10 course checklist
 
 | Item | Where | OK |

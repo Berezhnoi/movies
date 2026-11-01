@@ -104,6 +104,7 @@ own tables (migration `000002`). `internal/repository/movie_mapping.go` maps the
 | `GET, POST /login`, `POST /logout` | Public login; logout requires a session |
 | `GET, POST /movies/new`, `GET, POST /movies/{id}/edit` | Editor or admin |
 | `DELETE /web/movies/{id}` | Admin; returns an empty 200 so HTMX removes the row |
+| `GET /movies/{id}/chat`, `GET /ws/movies/{id}` | Login required; per-movie WebSocket chat (only when a chat hub is wired) |
 | `GET, POST /register` | Admin only (creates accounts; triggers the webhook if configured) |
 | `GET /static/{path}` | Public embedded assets |
 
@@ -127,6 +128,7 @@ All configuration comes from environment variables (`internal/config`). The `Mak
 | `APP_PORT` | `8080` | |
 | `ALLOWED_ORIGIN` | `*` | CORS `Access-Control-Allow-Origin` for the API |
 | `WEB_UI_ENABLED` | `true` | |
+| `WS_ALLOWED_ORIGINS` | `http://localhost:8080` | Comma-separated origins allowed to open the chat WebSocket |
 | `COOKIE_SECURE` | `false` | Must be `true` behind HTTPS |
 | `LOG_SQL` | `false` | GORM info-level SQL logging |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | — | Read only by `cmd/seed` |

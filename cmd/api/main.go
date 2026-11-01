@@ -19,6 +19,7 @@ import (
 
 	"homework/internal/app"
 	"homework/internal/auth"
+	"homework/internal/chat"
 	"homework/internal/config"
 	"homework/internal/repository"
 	"homework/internal/webhook"
@@ -93,15 +94,20 @@ func run() error {
 		log.Printf("user-created webhook enabled")
 	}
 
+	chatHub := chat.NewHub()
+	go chatHub.Run()
+
 	server := &http.Server{
 		Addr: ":" + strconv.Itoa(cfg.AppPort),
 		Handler: webhook.MarkAdminRegistration(app.NewRouterWithDeps(app.Deps{
-			Movies:        repository.NewGormMovieRepository(db),
-			Users:         users,
-			Tokens:        tokens,
-			EnableSwagger: true,
-			WebUIEnabled:  &cfg.WebUIEnabled,
-			CookieSecure:  cfg.CookieSecure,
+			Movies:             repository.NewGormMovieRepository(db),
+			Users:              users,
+			Tokens:             tokens,
+			EnableSwagger:      true,
+			WebUIEnabled:       &cfg.WebUIEnabled,
+			CookieSecure:       cfg.CookieSecure,
+			Chat:               chatHub,
+			ChatAllowedOrigins: cfg.WSAllowedOrigins,
 		})),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

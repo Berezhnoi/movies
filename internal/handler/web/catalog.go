@@ -208,6 +208,24 @@ func (handler *CatalogHandler) UpdateMovie(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, "/catalog?notice=updated")
 }
 
+func (handler *CatalogHandler) ChatPage(c *gin.Context) {
+	id, err := service.ParseMovieID(c.Param("id"))
+	if err != nil {
+		handler.renderFormError(c, http.StatusBadRequest, "Bad Request", "Please provide a valid movie ID.")
+		return
+	}
+	movie, err := handler.movies.GetByIDWithError(c.Request.Context(), id)
+	if err != nil {
+		handler.renderMovieLookupError(c, err)
+		return
+	}
+	handler.renderer.Page(c, http.StatusOK, "chat", ChatPage{
+		BasePage:   BasePage{Title: "Chat - " + movie.Title, User: userView(c)},
+		MovieID:    id,
+		MovieTitle: movie.Title,
+	})
+}
+
 type movieFormValues struct {
 	title       string
 	director    string
