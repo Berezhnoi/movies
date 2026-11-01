@@ -2,16 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Go (module `homework`, Gin + GORM + PostgreSQL) movie catalog: JSON API with JWT/RBAC plus a server-rendered HTMX web UI, shipped as one binary. This is a course homework repo graded by CI. See also `README.md` and `implementation-notes/`, which holds `PROJECT_SPEC.md` (routes, config vars, security model, known limitations), `AGENTS.md`, the security design and audit, and the Lesson 10 design decisions.
+Go (module `homework`, Gin + GORM + PostgreSQL) movie catalog: JSON API with JWT/RBAC plus a server-rendered HTMX web UI, shipped as one binary. This is a course homework repo graded by CI. See `README.md` for routes, config and the security model.
 
 ## Commands
 
 `make` includes and exports `.env` (copy from `.env.example` first), so most targets fail without it.
 
 ```sh
-go test -race -count=1 ./...                         # full suite; in-memory, no DB needed (what CI runs)
-go test -race -count=1 ./internal/app -run TestStage3 # single test / group
-make test                                            # same, but unsets TEST_DATABASE_URL
+VARIANT=movies go test -race -count=1 ./...          # full suite; in-memory, no DB needed (what CI runs)
+VARIANT=movies go test -race -count=1 ./internal/app -run TestStage3 # single test / group
+make test                                            # same (Makefile defaults VARIANT=movies), unsets TEST_DATABASE_URL
 make test-integration                                # Postgres repository tests; needs TEST_DB_NAME ending in _test
 go vet ./...
 make fmt                                             # gofmt -w
@@ -26,7 +26,7 @@ make migrate-create name=add_foo                     # new sequential up/down mi
 ## Grading constraints (do not break)
 
 - `internal/app/stage*_test.go`, `helpers_test.go`, `variants_test.go`, `scripts/score.py`, and `.github/workflows/ci.yml` are official files checksummed in `.github/tests.sha256`. Never edit them; change the implementation instead.
-- These tests read the `VARIANT` file at the repo root (env `VARIANT` overrides) to select expected behavior.
+- These tests select expected behavior from the `VARIANT` env var (`movies`). There is no `VARIANT` file; CI sets the env var, and `.github/tests.sha256` was regenerated after that ci.yml change. Regenerate it with `sha256sum` if any official file changes.
 - CI fails on any of: gofmt, `go vet`, or `go test -race` with a 180s timeout.
 
 ## Architecture

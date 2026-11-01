@@ -7,6 +7,8 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      VARIANT: movies
     steps:
       - uses: actions/checkout@v4
 

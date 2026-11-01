@@ -1,13 +1,15 @@
 include .env
 export
 
+VARIANT ?= movies
+
 .PHONY: build verify-isolation db-up db-down db-logs migrate-up migrate-down migrate-create migrate-version migrate-force run run-api-only seed-admin test test-db test-integration swagger fmt vet
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/movies-api ./cmd/api
 
 verify-isolation: build
-	./tools/verify-isolation.sh
+	./scripts/verify-isolation.sh
 
 db-up:
 	docker compose up -d
