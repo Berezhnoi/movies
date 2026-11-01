@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -9,8 +10,10 @@ import (
 // A real socket would need megabytes of unread data before the kernel buffer fills,
 // so this drives the hub directly with a client whose send buffer nobody drains.
 func TestHubDropsSlowClientWithoutBlockingOthers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	hub := NewHub()
-	go hub.Run()
+	go hub.Run(ctx)
 	slow := &Client{room: 1, send: make(chan []byte, sendBufferSize)}
 	fast := &Client{room: 1, send: make(chan []byte, sendBufferSize)}
 	hub.register <- slow

@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+Keep your replies extremely concise and focus on conveying the key information. No unnecessary fluff, no long code snipepts.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Go (module `homework`, Gin + GORM + PostgreSQL) movie catalog: JSON API with JWT/RBAC plus a server-rendered HTMX web UI, shipped as one binary. This is a course homework repo graded by CI. See `README.md` for routes, config and the security model.
@@ -42,6 +44,8 @@ Catalog search is a separate `MovieSearcher` capability (`repository.NewMovieSea
 - Web UI (`internal/handler/web`): JWT in the `access_token` HttpOnly, SameSite=Lax cookie (`COOKIE_SECURE` controls Secure). Its own middleware handles CSRF tokens + Origin host check on state-changing requests, `OptionalAuth`, and `RequireRole`. CSP forbids inline scripts/styles, so put JS in `web/static/js/app.js`, not in templates.
 
 **Templates**: `web/` embeds templates and static assets via `go:embed`. The renderer parses one template set per page (pages share `title`/`content` block names) plus a separate partial set for HTMX fragments. Use only `html/template` and no trusted types (`template.HTML` etc.). `internal/handler/web/audit_test.go` enforces this via AST checks. HTMX is vendored (`web/static/js/htmx.min.js`, see `VENDORED.txt`). HTMX delete must return an empty 200.
+
+**Chat**: `internal/chat` hub is single-owner (only `Run` touches `rooms`; others send on channels). Room messages go through a `broker`: local (default) or Redis when `REDIS_URL` is set (pub/sub `chat:movie:*` + capped history list). Redis tests in `internal/app/chat_redis_test.go` skip unless `TEST_REDIS_URL` is set; `docker compose --profile scale up` runs two instances on :8081/:8082.
 
 **Webhook**: `internal/webhook` decorates the `UserRepository` when `WEBHOOK_URL` is set and sends an HMAC-signed async `user.created` event. It fires only for admin web registration (`MarkAdminRegistration` wraps the handler), not for public API registration.
 

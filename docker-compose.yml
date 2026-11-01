@@ -65,6 +65,65 @@ services:
     ports:
       - "${APP_PORT:-8080}:${APP_PORT:-8080}"
 
+  # Used by app1/app2 and by the Redis tests (TEST_REDIS_URL=redis://127.0.0.1:6379).
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # The services below run only with `docker compose --profile scale up --build`.
+  # Seeds the first admin once (it is idempotent) after the shared `migrate` run.
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: [scale]
+    restart: "no"
+    entrypoint: ["/usr/local/bin/movies-seed"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+
+  app1: &scale-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: [scale]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    env_file:
+      - .env # Both instances share JWT_SECRET, so a token from one works on the other.
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      APP_PORT: 8080
+      REDIS_URL: redis://redis:6379
+      WS_ALLOWED_ORIGINS: http://localhost:8081,http://localhost:8082
+    ports:
+      - "8081:8080"
+
+  app2:
+    <<: *scale-app
+    ports:
+      - "8082:8080"
+
 volumes:
   postgres_data:
   pgadmin_data:

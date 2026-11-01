@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -94,8 +95,30 @@ func run() error {
 		log.Printf("user-created webhook enabled")
 	}
 
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	chatHub := chat.NewHub()
-	go chatHub.Run()
+	if cfg.RedisURL != "" {
+		options, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			return fmt.Errorf("REDIS_URL is invalid: %w", err)
+		}
+		rdb := redis.NewClient(options)
+		defer func() {
+			if err := rdb.Close(); err != nil {
+				log.Printf("close Redis connection: %v", err)
+			}
+		}()
+		redisPingCtx, cancelRedisPing := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelRedisPing()
+		if err := rdb.Ping(redisPingCtx).Err(); err != nil {
+			return fmt.Errorf("connect to Redis: %w", err)
+		}
+		chatHub = chat.NewRedisHub(rdb, cfg.ChatHistorySize)
+		log.Printf("chat uses Redis (history size %d)", cfg.ChatHistorySize)
+	}
+	go chatHub.Run(signalCtx)
 
 	server := &http.Server{
 		Addr: ":" + strconv.Itoa(cfg.AppPort),
@@ -111,8 +134,6 @@ func run() error {
 		})),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	serveResult := make(chan error, 1)
 	go func() {

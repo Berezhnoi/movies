@@ -45,7 +45,10 @@ type errorMessage struct {
 // readPump is the only reader. Its exit unregisters the client, which closes send and stops writePump.
 func (c *Client) readPump() {
 	defer func() {
-		c.hub.unregister <- c
+		select {
+		case c.hub.unregister <- c:
+		case <-c.hub.done:
+		}
 		_ = c.conn.Close()
 	}()
 	c.conn.SetReadLimit(maxMessageSize)
@@ -67,12 +70,12 @@ func (c *Client) readPump() {
 			text = strings.TrimSpace(input.Text)
 		}
 		if text == "" || utf8.RuneCountInString(text) > maxTextLength {
-			c.hub.broadcast <- envelope{to: c, data: mustJSON(errorMessage{Error: "text must be 1-500 characters"})}
+			c.hub.send(envelope{to: c, data: mustJSON(errorMessage{Error: "text must be 1-500 characters"})})
 			continue
 		}
-		c.hub.broadcast <- envelope{room: c.room, data: mustJSON(outgoingMessage{
+		c.hub.publish(c.room, mustJSON(outgoingMessage{
 			Room: c.room, Author: c.author, Text: text, Time: time.Now().UTC(),
-		})}
+		}))
 	}
 }
 
