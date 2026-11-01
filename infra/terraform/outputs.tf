@@ -3,7 +3,7 @@ output "function_name" {
 }
 
 output "function_url" {
-  description = "URL returned by Floci. See docs/floci-notes.md for how the app reaches it."
+  description = "URL returned by Floci. Resolved inside K3s via the CoreDNS *.floci zone (see infra/README.md)."
   value       = aws_lambda_function_url.notifier.function_url
 }
 

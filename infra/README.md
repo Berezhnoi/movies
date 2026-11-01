@@ -48,4 +48,19 @@ make -C infra tf-destroy && kubectl delete ns movies && make -C infra floci-down
 vagrant destroy -f                                                                 # Windows
 ```
 
-More detail: `docs/floci-notes.md`, `docs/k3s-notes.md`.
+## Notes
+
+- **Versions:** K3s `v1.36.5+k3s1` (bundled Traefik and local-path storage) and Floci `floci/floci:2.2.0`.
+- **Ports:** inside the VM, the app NodePort is 30080, Traefik uses 80/443 and Floci uses 4566. VirtualBox
+  forwards host 8080 to guest 80 and host 4566 to guest 4566, both bound to `127.0.0.1`.
+- **Function URL DNS:** Floci returns `http://<id>.lambda-url.us-east-1.floci:4566/`, which no DNS server
+  resolves. Floci routes these requests by the `Host` header, so a CoreDNS custom zone
+  (`k8s/coredns-custom.yaml.tmpl`) points `*.floci` at the node IP. The app uses the URL unchanged.
+- **Cold start:** the first Lambda invoke pulls the runtime image and takes about 20 seconds, so K3s sets
+  `WEBHOOK_TIMEOUT=60s`.
+- **Images:** K3s runs its own containerd, separate from Docker. Images built with Docker are imported with
+  `docker save … | sudo k3s ctr images import -`.
+- **Secrets:** `secrets.env`, Terraform state and kubeconfig files are gitignored. Never commit them,
+  because the state includes the webhook secret.
+- `make -C infra k3s-smoke` checks ingress, a PVC that persists across pod restarts, and that Docker and
+  Floci still work alongside K3s.
