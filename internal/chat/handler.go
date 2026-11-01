@@ -1,9 +1,11 @@
 package chat
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -61,6 +63,18 @@ func (handler *Handler) Serve(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	// History goes straight to conn: writePump has not started, so this is still the only writer.
+	history, err := handler.hub.broker.History(c.Request.Context(), id)
+	if err != nil {
+		log.Printf("load chat history: %v", err)
+	}
+	for _, message := range history {
+		_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+		if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+			_ = conn.Close()
+			return
+		}
+	}
 	client := &Client{
 		hub:    handler.hub,
 		conn:   conn,
@@ -68,7 +82,12 @@ func (handler *Handler) Serve(c *gin.Context) {
 		author: "user-" + strconv.FormatUint(claims.UserID, 10),
 		send:   make(chan []byte, sendBufferSize),
 	}
-	handler.hub.register <- client
+	select {
+	case handler.hub.register <- client:
+	case <-handler.hub.done:
+		_ = conn.Close()
+		return
+	}
 	go client.writePump()
 	go client.readPump()
 }

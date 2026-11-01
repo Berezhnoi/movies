@@ -74,6 +74,26 @@ ones are:
 | `COOKIE_SECURE` | `false` | **Must be `true` behind HTTPS** |
 | `WS_ALLOWED_ORIGINS` | `http://localhost:8080` | Origins allowed to open the chat socket |
 | `WEBHOOK_URL` / `WEBHOOK_SECRET` | empty | An empty URL turns the webhook off |
+| `REDIS_URL` | empty | Empty keeps the chat in memory; set it to share the chat via Redis |
+| `CHAT_HISTORY_SIZE` | `50` | Messages kept per room when Redis is on |
+
+## Movie chat
+
+Without `REDIS_URL` the chat lives in one process's memory: one instance, no history. With `REDIS_URL` each
+message is published to the Redis channel `chat:movie:{id}`, so every instance delivers it to its own clients,
+and the last `CHAT_HISTORY_SIZE` messages (list `chat:history:movie:{id}`) are sent to each user who joins.
+The app refuses to start if Redis does not answer; later Redis errors are logged and the message is delivered
+locally only. Try it with two instances (ports 8081 and 8082):
+
+```sh
+docker compose --profile scale up --build   # plain `docker compose up` also starts redis, but not app1/app2
+# Open the same movie's chat at http://localhost:8081 and http://localhost:8082 and log in on each tab.
+docker compose exec redis redis-cli LRANGE chat:history:movie:1 0 -1
+docker compose exec redis redis-cli PUBSUB NUMPAT   # 1: instances use PSUBSCRIBE, so PUBSUB CHANNELS is empty
+TEST_REDIS_URL=redis://127.0.0.1:6379 go test -race ./internal/app -run Redis
+```
+
+The history is capped and is not durable storage: Redis runs without persistence and loses it on restart.
 
 ## Security
 
@@ -92,7 +112,7 @@ Known limitations:
 - A role change takes effect only after the user's existing JWT expires.
 - There is no rate limiting.
 - The `Origin` check compares only the host, not the scheme.
-- Chat rooms are kept in memory, so the chat works with a single replica only.
+- Without `REDIS_URL`, chat rooms are kept in memory, so the chat works with a single replica only.
 
 ## Project layout
 
@@ -102,7 +122,7 @@ internal/app          router wiring (API, auth groups, web UI, Swagger)
 internal/handler      JSON handlers; handler/web holds the web UI handlers and middleware
 internal/service      business rules and validation
 internal/repository   GORM and in-memory implementations
-internal/chat         WebSocket hub
+internal/chat         WebSocket hub, optional Redis broker
 internal/webhook      signed user.created webhook
 web/                  embedded templates and static assets (HTMX vendored)
 migrations/           SQL migrations
@@ -115,6 +135,7 @@ infra/                VM, Terraform, Floci and K3s deployment
 ```sh
 VARIANT=movies go test -race -count=1 ./...   # no database needed
 make test-integration                        # PostgreSQL repository tests (needs a *_test DB)
+TEST_REDIS_URL=redis://127.0.0.1:6379 go test -race ./internal/app -run Redis   # chat over Redis
 go vet ./... && make fmt
 make swagger                                 # regenerate docs/ after changing handler annotations
 make verify-isolation                        # build the binary and run it from an empty directory

@@ -32,6 +32,8 @@ type Config struct {
 	WebUIEnabled      bool
 	CookieSecure      bool
 	WSAllowedOrigins  []string
+	RedisURL          string
+	ChatHistorySize   int
 }
 
 func Load() (Config, error) {
@@ -100,6 +102,13 @@ func Load() (Config, error) {
 		if origin = strings.TrimSpace(origin); origin != "" {
 			cfg.WSAllowedOrigins = append(cfg.WSAllowedOrigins, origin)
 		}
+	}
+	cfg.RedisURL = stringValue("REDIS_URL", "")
+	if cfg.ChatHistorySize, err = intValue("CHAT_HISTORY_SIZE", 50); err != nil {
+		return Config{}, err
+	}
+	if cfg.ChatHistorySize <= 0 {
+		return Config{}, fmt.Errorf("CHAT_HISTORY_SIZE must be greater than zero")
 	}
 	return cfg, nil
 }

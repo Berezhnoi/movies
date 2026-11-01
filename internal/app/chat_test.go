@@ -33,6 +33,17 @@ type chatTestEnv struct {
 func newChatTestEnv(t *testing.T) *chatTestEnv {
 	t.Helper()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	hub := chat.NewHub()
+	go hub.Run(ctx)
+	return newChatTestEnvWithHub(t, hub)
+}
+
+// newChatTestEnvWithHub serves hub, which the caller runs. Every env has the same movie IDs.
+func newChatTestEnvWithHub(t *testing.T, hub *chat.Hub) *chatTestEnv {
+	t.Helper()
+
 	movies := repository.NewInMemoryMovieRepositoryAdapter()
 	env := &chatTestEnv{}
 	for _, title := range []string{"First", "Second"} {
@@ -52,8 +63,6 @@ func newChatTestEnv(t *testing.T) *chatTestEnv {
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
-	hub := chat.NewHub()
-	go hub.Run()
 	env.server = httptest.NewServer(app.NewRouterWithDeps(app.Deps{
 		Movies: movies, Tokens: tokens, Chat: hub, ChatAllowedOrigins: []string{chatTestOrigin},
 	}))

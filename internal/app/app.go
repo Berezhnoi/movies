@@ -34,7 +34,7 @@ type Deps struct {
 	Secure        bool
 	CookieSecure  bool
 	WebUIEnabled  *bool
-	// Chat enables the movie chat when set; the caller starts the hub with go Chat.Run().
+	// Chat enables the movie chat when set; the caller starts the hub with go Chat.Run(ctx).
 	Chat               *chat.Hub
 	ChatAllowedOrigins []string
 }
