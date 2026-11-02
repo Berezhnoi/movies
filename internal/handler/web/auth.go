@@ -30,14 +30,9 @@ func NewAuthHandler(authService AuthService, renderer *Renderer, secure bool) *A
 }
 
 func (handler *AuthHandler) LoginPage(c *gin.Context) {
-	notice := ""
-	if c.Query("notice") == "registered" {
-		notice = "Your account has been created. Please log in."
-	}
 	handler.rendererPage(c, http.StatusOK, "login", LoginPage{
 		BasePage: BasePage{Title: "Log in"},
 		Next:     safeNext(c.Query("next")),
-		Notice:   notice,
 	})
 }
 
@@ -100,7 +95,7 @@ func (handler *AuthHandler) Register(c *gin.Context) {
 		})
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/login?notice=registered")
+	c.Redirect(http.StatusSeeOther, "/catalog?notice=registered")
 }
 
 func (handler *AuthHandler) Logout(c *gin.Context) {

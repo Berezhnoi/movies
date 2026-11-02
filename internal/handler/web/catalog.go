@@ -26,8 +26,9 @@ type CatalogHandler struct {
 }
 
 var catalogNotices = map[string]string{
-	"created": "Movie created successfully.",
-	"updated": "Movie updated successfully.",
+	"created":    "Movie created successfully.",
+	"updated":    "Movie updated successfully.",
+	"registered": "User account created successfully.",
 }
 
 func NewCatalogHandler(catalog *service.CatalogService, movies *service.MovieService, renderer *Renderer) *CatalogHandler {
