@@ -243,3 +243,42 @@ func TestChatClientsDoNotLeakGoroutines(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestChatAuthorUsesAccountName(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	hub := chat.NewHub()
+	go hub.Run(ctx)
+
+	movies := repository.NewInMemoryMovieRepositoryAdapter()
+	movie, err := movies.Create(ctx, model.Movie{Title: "First", Director: "Director", Country: "Country", Genre: "Drama"})
+	if err != nil {
+		t.Fatalf("movies.Create() error = %v", err)
+	}
+	users := repository.NewInMemoryUserRepository()
+	user := model.User{Email: "named@example.com", Name: "Named Viewer", PasswordHash: "hash", Role: model.RoleViewer}
+	if err := users.Create(ctx, &user); err != nil {
+		t.Fatalf("users.Create() error = %v", err)
+	}
+	tokens, err := auth.NewTokenManager(authTestSecret, time.Hour)
+	if err != nil {
+		t.Fatalf("NewTokenManager() error = %v", err)
+	}
+	token, err := tokens.Issue(user)
+	if err != nil {
+		t.Fatalf("Issue() error = %v", err)
+	}
+	env := &chatTestEnv{token: token, movies: []uint32{movie.ID}}
+	env.server = httptest.NewServer(app.NewRouterWithDeps(app.Deps{
+		Movies: movies, Users: users, Tokens: tokens, Chat: hub, ChatAllowedOrigins: []string{chatTestOrigin},
+	}))
+	t.Cleanup(env.server.Close)
+
+	conn := env.join(t, movie.ID, "named")
+	if err := conn.WriteJSON(map[string]string{"text": "hi"}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if message := readChatText(t, conn, "hi"); message.Author != "Named Viewer" {
+		t.Fatalf("author = %q, want account name", message.Author)
+	}
+}

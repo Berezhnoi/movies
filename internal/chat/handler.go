@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -12,20 +14,28 @@ import (
 
 	"homework/internal/apperr"
 	"homework/internal/auth"
+	"homework/internal/model"
+	"homework/internal/repository"
 	"homework/internal/service"
 )
 
 // accessTokenCookie is the web UI session cookie, because browsers cannot set headers on a WebSocket handshake.
 const accessTokenCookie = "access_token"
 
+// UserFinder resolves the display name shown next to chat messages.
+type UserFinder interface {
+	FindByID(ctx context.Context, id uint64) (model.User, error)
+}
+
 type Handler struct {
 	hub      *Hub
 	tokens   *auth.TokenManager
+	users    UserFinder
 	movies   *service.MovieService
 	upgrader websocket.Upgrader
 }
 
-func NewHandler(hub *Hub, tokens *auth.TokenManager, movies *service.MovieService, allowedOrigins []string) *Handler {
+func NewHandler(hub *Hub, tokens *auth.TokenManager, users UserFinder, movies *service.MovieService, allowedOrigins []string) *Handler {
 	allowed := make(map[string]bool, len(allowedOrigins))
 	for _, origin := range allowedOrigins {
 		allowed[origin] = true
@@ -33,6 +43,7 @@ func NewHandler(hub *Hub, tokens *auth.TokenManager, movies *service.MovieServic
 	return &Handler{
 		hub:    hub,
 		tokens: tokens,
+		users:  users,
 		movies: movies,
 		upgrader: websocket.Upgrader{
 			// A WebSocket is not covered by CORS, so this is the only cross-site protection for the cookie.
@@ -79,7 +90,7 @@ func (handler *Handler) Serve(c *gin.Context) {
 		hub:    handler.hub,
 		conn:   conn,
 		room:   id,
-		author: "user-" + strconv.FormatUint(claims.UserID, 10),
+		author: handler.authorName(c.Request.Context(), claims.UserID),
 		send:   make(chan []byte, sendBufferSize),
 	}
 	select {
@@ -90,6 +101,19 @@ func (handler *Handler) Serve(c *gin.Context) {
 	}
 	go client.writePump()
 	go client.readPump()
+}
+
+// authorName falls back to the user id when the account has no name or cannot be loaded.
+func (handler *Handler) authorName(ctx context.Context, userID uint64) string {
+	user, err := handler.users.FindByID(ctx, userID)
+	if err == nil {
+		if name := strings.TrimSpace(user.Name); name != "" {
+			return name
+		}
+	} else if !errors.Is(err, repository.ErrNotFound) {
+		log.Printf("load chat author: %v", err)
+	}
+	return "user-" + strconv.FormatUint(userID, 10)
 }
 
 // requestToken accepts the API's Bearer header, falling back to the web UI cookie.
