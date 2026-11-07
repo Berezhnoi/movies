@@ -1,7 +1,6 @@
 package app_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,15 +14,11 @@ import (
 
 func TestWebMovieFormCreateAuthorizationAndSuccess(t *testing.T) {
 	router, users, tokens := webAuthRouter(t)
-	user, err := users.FindByEmail(context.Background(), testWebEmail)
-	if err != nil {
-		t.Fatalf("find web fixture user: %v", err)
-	}
 	csrfCookie, csrfToken := getCSRF(t, router, "/catalog")
 
 	for _, role := range []string{model.RoleEditor, model.RoleAdmin} {
 		t.Run(role+" can create", func(t *testing.T) {
-			accessToken := mustIssueToken(t, tokens, model.User{ID: user.ID, Role: role})
+			accessToken := mustRoleToken(t, users, tokens, role)
 			page := movieFormRequest(router, http.MethodGet, "/movies/new", nil, csrfCookie, accessToken)
 			if page.Code != http.StatusOK {
 				t.Fatalf("GET /movies/new = %d: %s", page.Code, page.Body)
@@ -68,7 +63,7 @@ func TestWebMovieFormCreateAuthorizationAndSuccess(t *testing.T) {
 		})
 	}
 
-	viewerToken := mustIssueToken(t, tokens, model.User{ID: user.ID, Role: model.RoleViewer})
+	viewerToken := mustRoleToken(t, users, tokens, model.RoleViewer)
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		t.Run("viewer "+method+" forbidden", func(t *testing.T) {
 			if method == http.MethodGet {
@@ -98,11 +93,7 @@ func TestWebMovieFormCreateAuthorizationAndSuccess(t *testing.T) {
 
 func TestWebMovieFormValidationPreservesAndEscapesInput(t *testing.T) {
 	router, users, tokens := webAuthRouter(t)
-	user, err := users.FindByEmail(context.Background(), testWebEmail)
-	if err != nil {
-		t.Fatal(err)
-	}
-	editorToken := mustIssueToken(t, tokens, model.User{ID: user.ID, Role: model.RoleEditor})
+	editorToken := mustRoleToken(t, users, tokens, model.RoleEditor)
 	csrfCookie, csrfToken := getCSRF(t, router, "/catalog")
 
 	tests := []struct {
@@ -148,11 +139,7 @@ func TestWebMovieFormValidationPreservesAndEscapesInput(t *testing.T) {
 
 func TestWebMovieFormEditPreservesIdentityAndCreatedAt(t *testing.T) {
 	router, users, tokens := webAuthRouter(t)
-	user, err := users.FindByEmail(context.Background(), testWebEmail)
-	if err != nil {
-		t.Fatal(err)
-	}
-	editorToken := mustIssueToken(t, tokens, model.User{ID: user.ID, Role: model.RoleEditor})
+	editorToken := mustRoleToken(t, users, tokens, model.RoleEditor)
 	csrfCookie, csrfToken := getCSRF(t, router, "/catalog")
 	created := submitForm(router, "/movies/new", validMovieForm("Before edit", csrfToken), csrfCookie,
 		&http.Cookie{Name: "access_token", Value: editorToken})
@@ -203,11 +190,7 @@ func TestWebMovieFormEditPreservesIdentityAndCreatedAt(t *testing.T) {
 
 func TestWebMovieFormInvalidMissingIDsAndCSRF(t *testing.T) {
 	router, users, tokens := webAuthRouter(t)
-	user, err := users.FindByEmail(httptest.NewRequest(http.MethodGet, "/", nil).Context(), testWebEmail)
-	if err != nil {
-		t.Fatal(err)
-	}
-	editorToken := mustIssueToken(t, tokens, model.User{ID: user.ID, Role: model.RoleEditor})
+	editorToken := mustRoleToken(t, users, tokens, model.RoleEditor)
 	csrfCookie, csrfToken := getCSRF(t, router, "/catalog")
 
 	invalidID := movieFormRequest(router, http.MethodGet, "/movies/not-a-number/edit", nil, csrfCookie, editorToken)

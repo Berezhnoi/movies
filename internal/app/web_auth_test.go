@@ -304,9 +304,7 @@ func TestWebRegistrationRendersValidationAndPreservesNonPasswordFields(t *testin
 		t.Fatal(err)
 	}
 	viewerRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
-	viewerRequest.AddCookie(&http.Cookie{Name: "access_token", Value: mustIssueToken(t, tokens, model.User{
-		ID: admin.ID, Role: model.RoleViewer,
-	})})
+	viewerRequest.AddCookie(&http.Cookie{Name: "access_token", Value: mustRoleToken(t, users, tokens, model.RoleViewer)})
 	viewerResponse := httptest.NewRecorder()
 	router.ServeHTTP(viewerResponse, viewerRequest)
 	if viewerResponse.Code != http.StatusForbidden {
@@ -332,8 +330,14 @@ func TestWebRegistrationRendersValidationAndPreservesNonPasswordFields(t *testin
 	}
 }
 
-func mustIssueToken(t *testing.T, tokens *auth.TokenManager, user model.User) string {
+// mustRoleToken stores a fresh user with the given role, because auth
+// middleware reads the role from the repository rather than the token.
+func mustRoleToken(t *testing.T, users repository.UserRepository, tokens *auth.TokenManager, role string) string {
 	t.Helper()
+	user := model.User{Email: fmt.Sprintf("%s-%d@example.com", role, time.Now().UnixNano()), Name: role, PasswordHash: "unused", Role: role}
+	if err := users.Create(context.Background(), &user); err != nil {
+		t.Fatal(err)
+	}
 	token, err := tokens.Issue(user)
 	if err != nil {
 		t.Fatal(err)
@@ -523,5 +527,31 @@ func TestWebCatalogLinksToChatOnlyWhenEnabledAndLoggedIn(t *testing.T) {
 				t.Errorf("chat link visibility = %t, want %t", got, test.wantLink)
 			}
 		})
+	}
+}
+
+func TestWebDemotedAdminLosesAccessWithExistingToken(t *testing.T) {
+	router, users, tokens := webAuthRouter(t)
+	user, err := users.FindByEmail(context.Background(), testWebEmail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := users.UpdateRole(context.Background(), user.ID, model.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminToken, err := tokens.Issue(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := users.UpdateRole(context.Background(), user.ID, model.RoleViewer); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/register", nil)
+	request.AddCookie(&http.Cookie{Name: "access_token", Value: adminToken})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("demoted admin GET /register = %d, want 403", response.Code)
 	}
 }

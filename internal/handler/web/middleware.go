@@ -56,7 +56,7 @@ func OptionalAuth(tokens *auth.TokenManager, users repository.UserRepository, se
 			c.Next()
 			return
 		}
-		apimiddleware.SetPrincipal(c, claims.UserID, claims.Role)
+		apimiddleware.SetPrincipal(c, claims.UserID, user.Role)
 		apimiddleware.SetDisplayName(c, user.Name)
 		c.Next()
 	}

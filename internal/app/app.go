@@ -121,7 +121,7 @@ func newRouter(deps Deps) http.Handler {
 	api := router.Group("/api/v1")
 	if deps.Secure {
 		public := api.Group("")
-		protected := api.Group("", middleware.AuthMiddleware(deps.Tokens))
+		protected := api.Group("", middleware.AuthMiddleware(deps.Tokens, deps.Users))
 		staff := protected.Group("", middleware.RequireRole("editor", "admin"))
 		admin := protected.Group("", middleware.RequireRole("admin"))
 		handler.RegisterAPI(public, protected, staff, admin, movieHandler, authHandler, userHandler)

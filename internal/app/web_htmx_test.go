@@ -80,15 +80,11 @@ func TestHTMXMovieDeleteAuthorizationAndValidation(t *testing.T) {
 		t.Fatalf("create movie: %v", err)
 	}
 	_, users, tokens := webAuthRouter(t)
-	user, err := users.FindByEmail(context.Background(), testWebEmail)
-	if err != nil {
-		t.Fatalf("find test user: %v", err)
-	}
 	router := app.NewRouterWithDeps(app.Deps{Users: users, Tokens: tokens, Movies: movies})
 	csrfCookie, csrfToken := getCSRF(t, router, "/catalog")
-	adminToken := mustIssueToken(t, tokens, model.User{ID: user.ID, Role: model.RoleAdmin})
-	editorToken := mustIssueToken(t, tokens, model.User{ID: user.ID, Role: model.RoleEditor})
-	viewerToken := mustIssueToken(t, tokens, model.User{ID: user.ID, Role: model.RoleViewer})
+	adminToken := mustRoleToken(t, users, tokens, model.RoleAdmin)
+	editorToken := mustRoleToken(t, users, tokens, model.RoleEditor)
+	viewerToken := mustRoleToken(t, users, tokens, model.RoleViewer)
 
 	deleteRequest := func(id, accessToken, submittedCSRF string) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(http.MethodDelete, "/web/movies/"+id, nil)
