@@ -421,6 +421,8 @@ func (handler *CatalogHandler) DeleteMovie(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Unable to delete movie.")
 		return
 	}
+	// app.js shows the toast on this event; the body stays empty so HTMX removes the row.
+	c.Header("HX-Trigger", "movieDeleted")
 	c.Status(http.StatusOK)
 }
 
