@@ -114,7 +114,7 @@ func newRouter(deps Deps) http.Handler {
 			panic(fmt.Errorf("initialize web static files: %w", err))
 		}
 		staticFS = http.FS(files)
-		catalogHandler = webhandler.NewCatalogHandler(deps.Catalog, movieService, renderer)
+		catalogHandler = webhandler.NewCatalogHandler(deps.Catalog, movieService, renderer, deps.Chat != nil)
 	}
 
 	router.GET("/health", handler.Health)

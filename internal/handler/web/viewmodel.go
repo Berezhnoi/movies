@@ -53,6 +53,7 @@ type MovieRowView struct {
 	StatusClass string
 	CanEdit     bool
 	CanDelete   bool
+	CanChat     bool
 }
 
 type ErrorPage struct {
