@@ -25,6 +25,7 @@ func (apiError HTTPError) Error() string { return apiError.Message }
 func WriteError(c *gin.Context, err error) {
 	var validationError service.ValidationError
 	var notFoundError service.NotFoundError
+	var conflictError service.ConflictError
 	var invalidIDError service.InvalidIDError
 	var invalidPaginationError service.InvalidPaginationError
 	var apiError HTTPError
@@ -37,6 +38,8 @@ func WriteError(c *gin.Context, err error) {
 		apiError = HTTPError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: validationError.Message}
 	case errors.As(err, &notFoundError):
 		apiError = HTTPError{Status: http.StatusNotFound, Code: "not_found", Message: notFoundError.Message}
+	case errors.As(err, &conflictError):
+		apiError = HTTPError{Status: http.StatusConflict, Code: "conflict", Message: conflictError.Message}
 	case errors.As(err, &invalidIDError):
 		apiError = HTTPError{Status: http.StatusBadRequest, Code: "invalid_id", Message: "Invalid movie id"}
 	case errors.As(err, &invalidPaginationError):

@@ -36,11 +36,11 @@ func TestAuthHandlerRegisterCreatesUserAndRejectsDuplicates(t *testing.T) {
 		t.Fatalf("Register() did not assign viewer role: %s", response.Body.String())
 	}
 	duplicate := performAuthRequest(handler.Register, body)
-	if duplicate.Code != http.StatusUnprocessableEntity {
+	if duplicate.Code != http.StatusConflict {
 		t.Fatalf("duplicate Register() status = %d, body = %s", duplicate.Code, duplicate.Body.String())
 	}
-	if !strings.Contains(duplicate.Body.String(), `"code":"validation_error"`) {
-		t.Fatalf("duplicate Register() body lacks validation_error: %s", duplicate.Body.String())
+	if !strings.Contains(duplicate.Body.String(), `"code":"conflict"`) {
+		t.Fatalf("duplicate Register() body lacks conflict: %s", duplicate.Body.String())
 	}
 }
 

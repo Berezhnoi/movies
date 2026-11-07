@@ -110,6 +110,9 @@ func TestHTMXMovieDeleteAuthorizationAndValidation(t *testing.T) {
 	if deleted.Code != http.StatusOK || deleted.Body.Len() != 0 {
 		t.Fatalf("admin DELETE = %d with body %q, want empty 200", deleted.Code, deleted.Body.String())
 	}
+	if trigger := deleted.Header().Get("HX-Trigger"); trigger != "movieDeleted" {
+		t.Fatalf("admin DELETE HX-Trigger = %q, want movieDeleted", trigger)
+	}
 	apiList := httptest.NewRecorder()
 	router.ServeHTTP(apiList, httptest.NewRequest(http.MethodGet, "/api/v1/movies", nil))
 	var listed []model.Movie

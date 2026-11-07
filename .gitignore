@@ -13,3 +13,4 @@ list.txt
 result.json
 .idea/
 .vscode/
+.playwright-mcp/

@@ -13,6 +13,11 @@ document.body.addEventListener("htmx:responseError", (event) => {
   if (toast) toast.textContent = messages[event.detail.xhr.status] || "Something went wrong";
 });
 
+document.body.addEventListener("movieDeleted", () => {
+  const toast = document.getElementById("toast");
+  if (toast) toast.textContent = "Movie deleted.";
+});
+
 document.body.addEventListener("htmx:afterSwap", (event) => {
   if (event.detail.target?.id !== "movie-list") return;
 

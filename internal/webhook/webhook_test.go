@@ -111,7 +111,7 @@ func TestAdminWebRegistrationSendsSignedEvent(t *testing.T) {
 		"password": {"new-user-password"}, "csrf_token": {csrfToken},
 	}
 	response := post(router, "/register", "application/x-www-form-urlencoded", form.Encode(), csrfCookie, adminCookie)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login?notice=registered" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/catalog?notice=registered" {
 		t.Fatalf("POST /register = %d %q; want unchanged 303 redirect", response.Code, response.Header().Get("Location"))
 	}
 
@@ -154,7 +154,7 @@ func TestOtherRequestsDoNotSendEvents(t *testing.T) {
 	csrfCookie, csrfToken := csrf(t, router, adminCookie)
 	form := url.Values{"email": {"anon@example.com"}, "name": {"Anon"}, "password": {"anon-password"}, "csrf_token": {csrfToken}}
 	anonymous := post(router, "/register", "application/x-www-form-urlencoded", form.Encode(), csrfCookie)
-	if anonymous.Header().Get("Location") == "/login?notice=registered" {
+	if anonymous.Header().Get("Location") == "/catalog?notice=registered" {
 		t.Fatalf("anonymous POST /register succeeded (%d)", anonymous.Code)
 	}
 

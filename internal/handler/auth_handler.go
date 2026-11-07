@@ -36,6 +36,7 @@ func NewAuthHandler(authService AuthService) *AuthHandler {
 // @Produce json
 // @Param credentials body model.RegisterRequest true "Registration payload"
 // @Success 201 {object} model.UserResponse
+// @Failure 409 {object} model.ErrorResponse
 // @Failure 422 {object} model.ErrorResponse
 // @Failure 500 {object} model.ErrorResponse
 // @Router /auth/register [post]

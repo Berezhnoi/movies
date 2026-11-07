@@ -16,6 +16,7 @@ import (
 
 	"homework/internal/app"
 	"homework/internal/auth"
+	"homework/internal/chat"
 	webhandler "homework/internal/handler/web"
 	"homework/internal/model"
 	"homework/internal/repository"
@@ -481,4 +482,46 @@ func findCookie(t *testing.T, response *httptest.ResponseRecorder, name string) 
 	}
 	t.Fatalf("response does not contain cookie %q", name)
 	return nil
+}
+
+func TestWebCatalogLinksToChatOnlyWhenEnabledAndLoggedIn(t *testing.T) {
+	_, users, tokens := webAuthRouter(t)
+	user, err := users.FindByEmail(context.Background(), testWebEmail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	movieRepo := repository.NewInMemoryMovieRepositoryAdapter()
+	movie, err := movieRepo.Create(context.Background(), model.Movie{Title: "Chat Fixture", Director: "Director", Country: "Country", Genre: "Drama"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := tokens.Issue(user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chatLink := fmt.Sprintf(`href="/movies/%d/chat"`, movie.ID)
+
+	for _, test := range []struct {
+		name     string
+		hub      *chat.Hub
+		token    string
+		wantLink bool
+	}{
+		{name: "logged in with chat", hub: chat.NewHub(), token: token, wantLink: true},
+		{name: "anonymous with chat", hub: chat.NewHub()},
+		{name: "logged in without chat", token: token},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			router := app.NewRouterWithDeps(app.Deps{Users: users, Tokens: tokens, Movies: movieRepo, Chat: test.hub})
+			request := httptest.NewRequest(http.MethodGet, "/catalog", nil)
+			if test.token != "" {
+				request.AddCookie(&http.Cookie{Name: "access_token", Value: test.token})
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if got := strings.Contains(response.Body.String(), chatLink); got != test.wantLink {
+				t.Errorf("chat link visibility = %t, want %t", got, test.wantLink)
+			}
+		})
+	}
 }

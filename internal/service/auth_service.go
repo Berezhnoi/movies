@@ -63,7 +63,7 @@ func (service *AuthService) Register(ctx context.Context, request model.Register
 	}
 	if err := service.users.Create(ctx, &user); err != nil {
 		if errors.Is(err, repository.ErrEmailTaken) {
-			return model.UserResponse{}, ValidationError{Message: "email already registered"}
+			return model.UserResponse{}, ConflictError{Message: "email already registered"}
 		}
 		return model.UserResponse{}, fmt.Errorf("create user: %w", err)
 	}
@@ -85,8 +85,8 @@ func (service *AuthService) EnsureAdmin(ctx context.Context, email, password str
 		Name:     "Admin",
 	})
 	if err != nil {
-		var validationError ValidationError
-		if errors.As(err, &validationError) && validationError.Message == "email already registered" {
+		var conflictError ConflictError
+		if errors.As(err, &conflictError) {
 			return false, nil
 		}
 		return false, err

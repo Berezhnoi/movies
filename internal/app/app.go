@@ -114,7 +114,7 @@ func newRouter(deps Deps) http.Handler {
 			panic(fmt.Errorf("initialize web static files: %w", err))
 		}
 		staticFS = http.FS(files)
-		catalogHandler = webhandler.NewCatalogHandler(deps.Catalog, movieService, renderer)
+		catalogHandler = webhandler.NewCatalogHandler(deps.Catalog, movieService, renderer, deps.Chat != nil)
 	}
 
 	router.GET("/health", handler.Health)
@@ -134,7 +134,7 @@ func newRouter(deps Deps) http.Handler {
 		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/swagger/doc.json")))
 	}
 	if deps.Secure && deps.Chat != nil {
-		router.GET("/ws/movies/:id", chat.NewHandler(deps.Chat, deps.Tokens, movieService, deps.ChatAllowedOrigins).Serve)
+		router.GET("/ws/movies/:id", chat.NewHandler(deps.Chat, deps.Tokens, deps.Users, movieService, deps.ChatAllowedOrigins).Serve)
 	}
 	if catalogHandler != nil {
 		staticRoutes := router.Group("", webSecurityHeaders())

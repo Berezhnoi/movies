@@ -23,15 +23,18 @@ type CatalogHandler struct {
 	movies   *service.MovieService
 	renderer *Renderer
 	now      func() time.Time
+	// chatEnabled adds a chat link to each row for logged-in users.
+	chatEnabled bool
 }
 
 var catalogNotices = map[string]string{
-	"created": "Movie created successfully.",
-	"updated": "Movie updated successfully.",
+	"created":    "Movie created successfully.",
+	"updated":    "Movie updated successfully.",
+	"registered": "User account created successfully.",
 }
 
-func NewCatalogHandler(catalog *service.CatalogService, movies *service.MovieService, renderer *Renderer) *CatalogHandler {
-	return &CatalogHandler{catalog: catalog, movies: movies, renderer: renderer, now: time.Now}
+func NewCatalogHandler(catalog *service.CatalogService, movies *service.MovieService, renderer *Renderer, chatEnabled bool) *CatalogHandler {
+	return &CatalogHandler{catalog: catalog, movies: movies, renderer: renderer, now: time.Now, chatEnabled: chatEnabled}
 }
 
 func (handler *CatalogHandler) Root(c *gin.Context) {
@@ -418,16 +421,21 @@ func (handler *CatalogHandler) DeleteMovie(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Unable to delete movie.")
 		return
 	}
+	// app.js shows the toast on this event; the body stays empty so HTMX removes the row.
+	c.Header("HX-Trigger", "movieDeleted")
 	c.Status(http.StatusOK)
 }
 
 func (handler *CatalogHandler) movieRows(c *gin.Context, movies []model.Movie, now time.Time) []MovieRowView {
 	rows := make([]MovieRowView, 0, len(movies))
+	userID, loggedIn := middleware.UserIDFrom(c)
+	canChat := handler.chatEnabled && loggedIn && userID != 0
 	role, _ := middleware.RoleFrom(c)
 	for _, movie := range movies {
 		row := MapMovie(movie, now)
 		row.CanEdit = middleware.RoleAllowed(role, "editor", "admin")
 		row.CanDelete = role == "admin"
+		row.CanChat = canChat
 		rows = append(rows, row)
 	}
 	return rows

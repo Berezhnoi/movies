@@ -46,7 +46,7 @@ func TestAuth_RegisterDuplicateEmail(t *testing.T) {
 				t.Fatalf("json.Marshal() error = %v", err)
 			}
 			response := env.do(http.MethodPost, "/api/v1/auth/register", string(body), "")
-			assertAuthStatusAndCode(t, response, http.StatusUnprocessableEntity, "validation_error")
+			assertAuthStatusAndCode(t, response, http.StatusConflict, "conflict")
 		})
 	}
 }
