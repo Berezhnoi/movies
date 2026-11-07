@@ -13,7 +13,7 @@ server-rendered web UI.
 
 ## Quick start
 
-Prerequisites: Go 1.21+, Docker Compose, `make`.
+Prerequisites: Go 1.26+, Docker Compose, `make`.
 
 ```sh
 cp .env.example .env   # then set DB_PASSWORD, JWT_SECRET, ADMIN_EMAIL/ADMIN_PASSWORD
