@@ -69,9 +69,9 @@ func TestAuthServiceDuplicateEmail(t *testing.T) {
 	}
 	second := model.RegisterRequest{Email: "READER@example.com", Password: "correct horse", Name: "Reader"}
 	_, err := authService.Register(context.Background(), second)
-	var validationError service.ValidationError
-	if !errors.As(err, &validationError) || validationError.Message != "email already registered" {
-		t.Fatalf("Register(duplicate) error = %v, want email already registered validation error", err)
+	var conflictError service.ConflictError
+	if !errors.As(err, &conflictError) || conflictError.Message != "email already registered" {
+		t.Fatalf("Register(duplicate) error = %v, want email already registered conflict error", err)
 	}
 }
 

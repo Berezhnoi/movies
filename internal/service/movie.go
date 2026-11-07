@@ -32,6 +32,12 @@ type NotFoundError struct {
 
 func (notFoundError NotFoundError) Error() string { return notFoundError.Message }
 
+type ConflictError struct {
+	Message string
+}
+
+func (conflictError ConflictError) Error() string { return conflictError.Message }
+
 type InvalidIDError struct{}
 
 func (InvalidIDError) Error() string { return "Invalid movie id" }

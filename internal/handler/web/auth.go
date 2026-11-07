@@ -75,7 +75,7 @@ func (handler *AuthHandler) Login(c *gin.Context) {
 
 func (handler *AuthHandler) Register(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
-		handler.registerFailure(c, "", "", "Registration details are invalid.")
+		handler.registerFailure(c, http.StatusUnprocessableEntity, "", "", "Registration details are invalid.")
 		return
 	}
 	email := c.Request.PostForm.Get("email")
@@ -84,9 +84,14 @@ func (handler *AuthHandler) Register(c *gin.Context) {
 		Email: email, Name: name, Password: c.Request.PostForm.Get("password"),
 	})
 	if err != nil {
+		var conflict service.ConflictError
+		if errors.As(err, &conflict) {
+			handler.registerFailure(c, http.StatusConflict, email, name, conflict.Message)
+			return
+		}
 		var validation service.ValidationError
 		if errors.As(err, &validation) {
-			handler.registerFailure(c, email, name, validation.Message)
+			handler.registerFailure(c, http.StatusUnprocessableEntity, email, name, validation.Message)
 			return
 		}
 		log.Printf("web registration failed: %v", err)
@@ -111,8 +116,8 @@ func (handler *AuthHandler) loginFailure(c *gin.Context) {
 	})
 }
 
-func (handler *AuthHandler) registerFailure(c *gin.Context, email, name, message string) {
-	handler.rendererPage(c, http.StatusUnprocessableEntity, "register", RegisterPage{
+func (handler *AuthHandler) registerFailure(c *gin.Context, status int, email, name, message string) {
+	handler.rendererPage(c, status, "register", RegisterPage{
 		BasePage: BasePage{Title: "Register"},
 		Email:    email,
 		Name:     name,
