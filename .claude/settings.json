@@ -4,7 +4,18 @@
       "Bash(go test:*)",
       "Bash(go vet:*)",
       "Bash(make test)",
-      "Bash(make fmt)"
+      "Bash(make fmt)",
+      "Bash(make check)",
+      "Bash(./scripts/check.sh:*)"
+    ],
+    "deny": [
+      "Read(./docs/docs.go)",
+      "Read(./docs/swagger.json)",
+      "Read(./docs/swagger.yaml)",
+      "Read(./go.sum)",
+      "Read(./functions/notifier/go.sum)",
+      "Read(./web/static/js/htmx.min.js)",
+      "Read(./.claude/skills/golang-security/evals/**)"
     ]
   },
   "hooks": {
