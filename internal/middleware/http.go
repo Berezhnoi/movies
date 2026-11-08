@@ -25,9 +25,17 @@ func RequestLogger() gin.HandlerFunc {
 	}
 }
 
-func RequestBodyLimit() gin.HandlerFunc {
+// RequestBodyLimit caps request bodies at 1 MiB, except on the exempt routes,
+// given as "METHOD /full/:path" (c.FullPath), whose handlers apply their own limit.
+func RequestBodyLimit(exemptRoutes ...string) gin.HandlerFunc {
+	exempt := make(map[string]bool, len(exemptRoutes))
+	for _, route := range exemptRoutes {
+		exempt[route] = true
+	}
 	return func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBodySize)
+		if !exempt[c.Request.Method+" "+c.FullPath()] {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBodySize)
+		}
 		c.Next()
 	}
 }

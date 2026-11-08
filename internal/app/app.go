@@ -37,7 +37,13 @@ type Deps struct {
 	// Chat enables the movie chat when set; the caller starts the hub with go Chat.Run(ctx).
 	Chat               *chat.Hub
 	ChatAllowedOrigins []string
+	// TrailerStorage enables the trailer API when set; Trailers defaults to an in-memory repository.
+	TrailerStorage service.TrailerStorage
+	Trailers       repository.TrailerRepository
 }
+
+// trailerUploadRoute is exempt from the global body limit; the handler applies its own.
+const trailerUploadRoute = "PUT /api/v1/movies/:id/trailer"
 
 // NewRouter creates a router and a fresh in-memory repository for each call.
 func NewRouter() http.Handler {
@@ -90,7 +96,7 @@ func newRouter(deps Deps) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	// CORS must wrap recovery so panic responses also receive CORS headers.
-	router.Use(middleware.CORS(), middleware.Recovery(), middleware.RequestLogger(), middleware.RequestBodyLimit())
+	router.Use(middleware.CORS(), middleware.Recovery(), middleware.RequestLogger(), middleware.RequestBodyLimit(trailerUploadRoute))
 	router.HandleMethodNotAllowed = true
 	router.RedirectTrailingSlash = false
 	router.RedirectFixedPath = false
@@ -125,6 +131,13 @@ func newRouter(deps Deps) http.Handler {
 		staff := protected.Group("", middleware.RequireRole("editor", "admin"))
 		admin := protected.Group("", middleware.RequireRole("admin"))
 		handler.RegisterAPI(public, protected, staff, admin, movieHandler, authHandler, userHandler)
+		if deps.TrailerStorage != nil {
+			if deps.Trailers == nil {
+				deps.Trailers = repository.NewInMemoryTrailerRepository()
+			}
+			trailerService := service.NewTrailerService(deps.Movies, deps.Trailers, deps.TrailerStorage)
+			handler.RegisterTrailerAPI(public, staff, handler.NewTrailerHandler(trailerService))
+		}
 	} else {
 		handler.RegisterAPI(api, api, api, api, movieHandler, authHandler, userHandler)
 	}

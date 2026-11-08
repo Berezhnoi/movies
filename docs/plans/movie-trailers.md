@@ -22,7 +22,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 | D2 | The `TrailerStorage` interface lives in `internal/service`. The S3 implementation and the in-memory fake live in a new `internal/storage`. | Put the interface in `repository` | The PRD and the user asked for it in the service layer. The fake makes FR-7/11/12 testable without Floci. |
 | D3 | Each movie has a fixed object key, `trailers/<movie_id>.mp4`. | A UUID per upload | A replace is then one atomic overwrite, with no orphaned old objects (FR-2). |
 | D4 | The upload is streamed through `MultipartReader` into a temp file, which checks the size limit and the `ftyp` magic bytes. The file is then sent with `PutObject`, which gets a known length and a seekable body. | SDK multipart `manager.Uploader` | This never buffers 50 MiB in memory. It also avoids S3 multipart APIs that Floci may not support and gives deterministic validation before any S3 call. |
-| D5 | The handler parses a single `bytes=` range and validates it against the HEAD size (416). It passes `Range` to `GetObject` and copies `Content-Length`/`Content-Range` from the response. A multi-range request gets 200 with the full body. | `http.ServeContent` over a seeking S3 reader | Simple and testable with the fake. It does not depend on Floci's own 416 behaviour. |
+| D5 | The service (`service.ParseByteRange`, called from `TrailerService.Open`) parses a single `bytes=` range and validates it against the HEAD size; an unsatisfiable range returns `RangeNotSatisfiableError` (416 `range_not_satisfiable`, with the handler setting `Content-Range: bytes */N`). Only that one resolved range is passed to storage `Get`, and the handler copies `Content-Length`/`Content-Range` from the storage response. A multi-range or malformed header gets 200 with the full body. | Parse in the handler, or `http.ServeContent` over a seeking S3 reader | Handlers only map typed errors (project pattern), the parser is unit-testable, and it does not depend on Floci's own 416 behaviour (Floci answers multi-range with 416). |
 | D6 | (N-4) The precedence is 401/403 → 400 → 404 → 413/415/422. Write routes go on the existing `staff` group through a new `handler.RegisterTrailerAPI(public, staff, …)`, and auth runs first. The handler parses the id, checks the movie, then the body. `RegisterAPI` is unchanged. | A separate group with an id check before auth | This matches how the existing movie routes behave, and adds no extra group or middleware. |
 | D7 | `RequestBodyLimit` skips the trailer upload routes, matched by `c.FullPath()`. The upload handler applies its own limit: 50 MiB for the file part, plus a small allowance for the multipart envelope. | Raise the global cap | The global 1 MiB cap stays everywhere else (NFR). |
 | D8 | Movie delete cleanup goes through an additive `service.NewMovieServiceWithTrailerCleanup(repo, cleaner)`. After the movie is deleted it deletes the trailer row (needed for in-memory; GORM cascades anyway) and the object, and only logs failures. | Rely on the DB cascade | The in-memory repository has no FK, and the object still has to be removed (FR-10). |
@@ -79,7 +79,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   - the spike's S3 calls work with those pinned versions
   - the pinned versions are recorded in `floci-notes.md`, with any known S3 fixes they miss
 
-### T2: Trailer data, storage interface, upload + stream API slice   (covers FR-1, FR-3, FR-4, FR-5, FR-6)   depends on: T1
+### T2: Trailer data, storage interface, upload + stream API slice   (covers FR-1, FR-3, FR-4, FR-5, FR-6)   depends on: T1   **Status: done**
 - Goal: an end-to-end slice through `NewRouterWithDeps` with the in-memory storage fake. Upload returns 201, and stream returns 200/206.
 - Files:
   - `migrations/000004_*`, `internal/model/trailer.go`
@@ -89,7 +89,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 - Steps:
   1. Migration `movie_trailers`: `movie_id` BIGINT PK FK → movies ON DELETE CASCADE, `object_key`, `content_type`, `size_bytes`, `uploaded_by` FK → users ON DELETE SET NULL, `uploaded_at`.
   2. Service: `Upload`, `Metadata` (with HEAD), and `Open` (with range). Errors: `TrailerUnavailableError`, `ErrStorageUnavailable`, `PayloadTooLargeError`, `UnsupportedMediaTypeError`, mapped in apperr to 404/503/413/415.
-  3. Handler: implement D4–D7, `Content-Type: video/mp4`, and `X-Content-Type-Options: nosniff`.
+  3. Handler: implement D4, D6 and D7, and stream the range resolved by the service (D5), `Content-Type: video/mp4`, and `X-Content-Type-Options: nosniff`.
   4. Add `Deps.Trailers` (D1).
 - Tests: `internal/app/trailer_test.go`, using the `rbac_test.go` helpers:
   - upload 201 → metadata 200 → full GET 200 with identical bytes, plus the headers
@@ -230,6 +230,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 - **Floci gaps (Range, error codes):** found in T1. The fallbacks are noted in `floci-notes.md`, and the PRD is amended before T2.
 - **An SDK upgrade past the T1 pins needs Go ≥ 1.23 and would break CI on Go 1.22:** noticed when CI fails at `go mod download`. Keep the pins until CI moves to a newer Go.
 - **The body-limit exemption is too broad:** caught by the existing 1 MiB tests and a new test that `/api/v1/movies` still returns 413 above 1 MiB.
+- **Known limitation: concurrent uploads to the same movie** (T2 review #1): both write the fixed key, so the row's `size_bytes` and `uploaded_at` can describe the other upload. Streaming is unaffected, because sizes and ranges come from the storage HEAD and GET responses. Accepted for this project; per-movie serialization (a lock, or a row lock in Postgres) would fix it if needed.
 - **Temp files leak on errors:** covered by the T10 review and a deferred remove.
 - **Rollback in general:** set `TRAILERS_ENABLED=false`, which removes the routes and UI. The migration down drops `movie_trailers`. The movie data is never touched.
 
