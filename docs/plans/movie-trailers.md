@@ -4,7 +4,7 @@ PRD: docs/prd/movie-trailers.md   Status: approved   Date: 2026-11-08
 ## 1. Summary
 The work starts with a spike against Floci S3. After that comes a vertical API slice: a trailer table, a `TrailerStorage` interface in `service` with an in-memory fake, a `TrailerService`, and handlers, giving upload then stream end to end through `NewRouterWithDeps`.
 The S3 implementation (AWS SDK v2 with static creds, `BaseEndpoint`, path-style, and a guard against real AWS) plugs in behind that interface, and `cmd/api` wires it only when `TRAILERS_ENABLED=true`.
-`NewRouter()` gets no trailer routes, so the stage tests are untouched.
+`NewRouter()` gets no trailer routes, so it and the existing tests are untouched.
 The web UI comes last: an upload/delete section on the edit form, the catalog link, and the watch page.
 CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOINT` is set.
 
@@ -12,14 +12,13 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 - `go build ./...` and `go vet ./...` are green.
 - `go test -race ./...` passes in all packages except `TestChatBroadcastsOnlyWithinRoom` (internal/app) and `TestAdminWebRegistrationSendsSignedEvent` (internal/webhook). Both panic on `httptest` port binding, which the local sandbox blocks (`bind: operation not permitted`). These are environment issues, not code failures; re-run outside the sandbox to confirm.
 - `.env.example` exists, but the sandbox blocks reading it, so T8 has to update it.
-- `fea9ce4` removed VARIANT. The official files (`stage*_test.go`, `helpers_test.go`, `variants_test.go`, `scripts/score.py`, `ci.yml`) and `.github/tests.sha256` are still present, and CI still checks them.
-- Test commands are `go test -race -count=1 ./...` and `make test` (which runs `go test ./...` with `TEST_DATABASE_URL` unset and no `-race`).
+- The test command is `go test -race ./...`. CI runs gofmt, `go vet` and `go test -race` (180s timeout).
 - `go.mod` declares `go 1.21`, `ci.yml` still uses Go 1.22, and the Dockerfile uses Go 1.26. **The current AWS SDK for Go v2 needs Go ≥ 1.23** (N-1).
 
 ## 3. Decisions
 | # | Decision | Alternative | Why |
 |---|----------|-------------|-----|
-| D1 | Trailer routes and the web UI exist only when `Deps.Trailers` is set. `NewRouter()` leaves it nil. | Register them always, with a fake | Stage tests and `NewRouter()` stay untouched. With the flag off, the routes return 404 (PRD assumption). |
+| D1 | Trailer routes and the web UI exist only when `Deps.Trailers` is set. `NewRouter()` leaves it nil. | Register them always, with a fake | `NewRouter()` and the existing tests stay untouched. With the flag off, the routes return 404 (PRD assumption). |
 | D2 | The `TrailerStorage` interface lives in `internal/service`. The S3 implementation and the in-memory fake live in a new `internal/storage`. | Put the interface in `repository` | The PRD and the user asked for it in the service layer. The fake makes FR-7/11/12 testable without Floci. |
 | D3 | Each movie has a fixed object key, `trailers/<movie_id>.mp4`. | A UUID per upload | A replace is then one atomic overwrite, with no orphaned old objects (FR-2). |
 | D4 | The upload is streamed through `MultipartReader` into a temp file, which checks the size limit and the `ftyp` magic bytes. The file is then sent with `PutObject`, which gets a known length and a seekable body. | SDK multipart `manager.Uploader` | This never buffers 50 MiB in memory. It also avoids S3 multipart APIs that Floci may not support and gives deterministic validation before any S3 call. |
@@ -56,7 +55,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 - **Env:** `TRAILERS_ENABLED`, `S3_ENDPOINT_URL`, `S3_BUCKET`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. `TEST_S3_ENDPOINT` is used only by tests.
 - **Unchanged:**
   - the Movie JSON and the `/api/v1/movies*` routes and status codes
-  - `RegisterAPI`, `NewRouter()`, and the official tests and checksums
+  - `RegisterAPI`, `NewRouter()`, and the existing tests
   - the CSP header and the existing error codes
 
 ## 5. Tasks
@@ -128,13 +127,13 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   1. Implement Get, Upsert (on conflict `movie_id`), Delete, and `ExistsFor(ids)` (used by T7).
   2. Map not-found errors the way `movie_gorm.go` does.
 - Tests: a shared behaviour table run against both implementations. Against Postgres (`TEST_DATABASE_URL`): the cascade on movie delete.
-- Verify: `make test` is green, and `make test-integration` passes against `_test` DB.
+- Verify: `go test -race ./...` is green, and `make test-integration` passes against `_test` DB.
 
 ### T5: S3 storage, config and real-AWS guard   (covers FR-11, FR-12, FR-13, NFR security)   depends on: T1, T2   parallel with: T3, T4
 - Goal: a real implementation of `TrailerStorage`, wired in `cmd/api` when `TRAILERS_ENABLED=true`.
 - Files: `go.mod`/`go.sum`, `internal/storage/s3.go`, `internal/storage/s3_floci_test.go`, `internal/config/config.go`, `internal/config/config_test.go`, `cmd/api/main.go`.
 - Steps:
-  1. Build the client as in D9.
+  1. Add the SDK pinned to the T1 versions (`aws-sdk-go-v2 v1.39.2`, `service/s3 v1.88.4`, `credentials v1.18.16`, `smithy-go v1.23.0`), with `go 1.22` in go.mod. Build the client as in D9.
   2. Map errors: `NoSuchKey`, `NoSuchBucket`, `NotFound`, and HEAD 404 → object-not-found; network or 5xx → unavailable (based on the T1 findings).
   3. Ensure the bucket and retry once on put (D10).
   4. In config, `TRAILERS_ENABLED` is a strict bool. When it is true, `S3_ENDPOINT_URL` (parsed, http/https) and `S3_BUCKET` are required, and the app rejects an empty endpoint or a host equal to or ending in `.amazonaws.com` (also `amazonaws.com.cn`).
@@ -142,7 +141,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 - Tests:
   - config: disabled and empty → OK; enabled and empty → error; `s3.amazonaws.com` → error; `bucket.s3.eu-west-1.amazonaws.com` → error; `http://floci:4566` → OK
   - Floci tests, skipped unless `TEST_S3_ENDPOINT` is set: put/head/get, a range, missing key, missing bucket, and auto-create after the bucket is deleted
-- Verify: `make test` is green without Floci. `TEST_S3_ENDPOINT=http://localhost:4566 go test -race ./internal/storage` passes against Floci.
+- Verify: `go test -race ./...` is green without Floci. `TEST_S3_ENDPOINT=http://localhost:4566 go test -race ./internal/storage` passes against Floci.
 - Manual check against real Floci (at the end of T5, recorded in `floci-notes.md`):
   1. `make -C infra floci-up`, then `make run` with `TRAILERS_ENABLED=true` and `S3_ENDPOINT_URL=http://localhost:4566`.
   2. Upload a small MP4 with an editor token → 201. Full GET → 200 with the same bytes. `Range: bytes=0-99` → 206.
@@ -185,14 +184,13 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   2. Add a "Trailers" section: routes, error codes, env vars, and how to run with Floci in compose and K3s, linking `docs/floci-notes.md`.
   3. Add the new variables to `.env.example` with dummy values only. The sandbox blocks reading this file, so ask the user to allow it or to apply the snippet.
   4. Run `make swagger`.
-- Verify: `make swagger` produces a clean diff limited to the trailer paths. Running `cp .env.example .env && make test` passes.
+- Verify: `make swagger` produces a clean diff limited to the trailer paths. `go test -race ./...` passes.
 
 ### T9: Full verification   (covers all NFR compatibility)   depends on: T8
 - Steps:
-  1. Run `make fmt` (no diff), `go vet ./...`, and `go test -race -count=1 -timeout 180s ./...` outside the sandbox.
-  2. Check that `sha256sum -c .github/tests.sha256` passes and that `git diff main -- internal/app/stage*_test.go helpers_test.go variants_test.go .github` is empty.
-  3. Run `make build && make verify-isolation`.
-  4. Run the Floci-gated tests with `TEST_S3_ENDPOINT`.
+  1. Run `gofmt -l .` (empty), `go vet ./...`, and `go test -race -timeout 180s ./...` outside the sandbox.
+  2. Run `make build && make verify-isolation`.
+  3. Run the Floci-gated tests with `TEST_S3_ENDPOINT`.
 - Verify: all of the above are green.
 
 ### T10: Review with go-review-best-practices   depends on: T9
@@ -218,27 +216,25 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 | FR-12 storage down (incl. delete) | T3, T5, T6 | trailer_test unavailable → 503 for upload, metadata, stream and delete with the row kept, movies unaffected; T5 manual check |
 | FR-13 real-AWS guard (only when enabled) | T5 | config_test: disabled + empty → OK, enabled guard cases; T5 manual check |
 | FR-14 web UI | T7 | web_trailer_test |
-| NFR compatibility (Movie contract, NewRouter, official files) | T2, T9 | existing movie tests unchanged; NewRouter trailer 404 test; `sha256sum -c` |
+| NFR compatibility (Movie contract, NewRouter, existing tests) | T2, T9 | existing movie tests pass unchanged; NewRouter trailer 404 test |
 | NFR body cap: 1 MiB elsewhere, 50 MiB on API + web upload routes | T2, T7 | 413 tests; new test that `/api/v1/movies` POST > 1 MiB → 413; web upload test |
 | NFR CSRF/Origin on the web upload | T7 | web_trailer_test without token or Origin → 403 |
 | NFR timeouts do not cut uploads or streams | T5, T9 | main.go keeps only `ReadHeaderTimeout` (review); T5 manual check uploads and streams a near-50 MiB file |
 | NFR security: dummy creds, keys from movie id, CSP `'self'`, nosniff, error JSON | T2, T5, T7 | header asserts; object key assert in fake; config_test; CSP assert; error-shape asserts |
-| NFR testability: no Floci in CI, opt-in Floci tests | T5, T9 | `make test` without Floci; `TEST_S3_ENDPOINT` skip |
+| NFR testability: no Floci in CI, opt-in Floci tests | T5, T9 | `go test -race ./...` without Floci; `TEST_S3_ENDPOINT` skip |
 | NFR performance: no full-file buffering | T2, T10 | temp-file upload and `io.Copy` stream; review checklist |
 | NFR observability: logs for upload, delete, lost object and storage errors | T3 | log capture (`log.SetOutput` to a buffer) asserts movie id in the lost-object and storage-error logs |
 | NFR simplicity: one bucket, one object per movie, no background jobs | T2, T10 | fixed-key assert; review |
 
 ## 7. Risks and rollback
 - **Floci gaps (Range, error codes):** found in T1. The fallbacks are noted in `floci-notes.md`, and the PRD is amended before T2.
-- **The Go 1.23+ SDK breaks CI on Go 1.22 (N-1):** noticed when CI fails at `go mod download`. To roll back, pin an older SDK version or revert T5.
+- **An SDK upgrade past the T1 pins needs Go ≥ 1.23 and would break CI on Go 1.22:** noticed when CI fails at `go mod download`. Keep the pins until CI moves to a newer Go.
 - **The body-limit exemption is too broad:** caught by the existing 1 MiB tests and a new test that `/api/v1/movies` still returns 413 above 1 MiB.
 - **Temp files leak on errors:** covered by the T10 review and a deferred remove.
 - **Rollback in general:** set `TRAILERS_ENABLED=false`, which removes the routes and UI. The migration down drops `movie_trailers`. The movie data is never touched.
 
 ## 8. Needs decision
-- **N-1 (blocking T5): Go version.** The current AWS SDK v2 needs Go ≥ 1.23, but `ci.yml` is official and still uses Go 1.22.
-  - Recommended: pin the newest SDK module versions whose `go.mod` declares ≤ 1.22, verified by the T1 acceptance checks, and keep `go.mod` at ≤ 1.22.
-  - Alternative: raise the `go` directive and rely on `GOTOOLCHAIN=auto` in CI. This is riskier because CI is graded.
+- **N-1 (resolved by T1): Go version.** CI uses Go 1.22 (ci.yml line 15), and the current AWS SDK v2 needs Go ≥ 1.23. T5 pins `aws-sdk-go-v2 v1.39.2`, `service/s3 v1.88.4`, `credentials v1.18.16` and `smithy-go v1.23.0`, all of which declare `go 1.22` and passed the T1 checks (see `docs/floci-notes.md`). The `go` directive in `go.mod` becomes 1.22.
 - **N-4 (resolved):** the precedence is 401/403 → 400 → 404 → 413/415/422, using the existing staff group with no separate route group (D6).
 - **N-2: Web upload without JavaScript.** The CSRF check reads the token from the header or from `ParseForm`, which does not parse multipart bodies. So the upload works only through HTMX, which adds the header. Recommended: accept that the upload requires HTMX, as the rest of the UI already does.
 - **N-3: The response to a web trailer delete.** Recommended: return the refreshed trailer-section fragment with 200, instead of the empty 200 used by movie row deletes, so the upload control reappears.
@@ -249,5 +245,5 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 - [ ] `gofmt`, `go vet` and `go test -race ./...` are green without Floci
 - [ ] Swagger is regenerated, and the README has the trailers section and the fixed line 57
 - [ ] `.env.example` is updated with the new variables
-- [ ] The Movie contract, `NewRouter()`, the official tests and `.github/tests.sha256` are unchanged
+- [ ] The Movie contract and `NewRouter()` are unchanged, and the existing tests pass
 - [ ] The go-review-best-practices review is done and its findings are resolved

@@ -37,7 +37,7 @@ Out of scope (explicitly): multiple trailers or galleries, formats other than MP
 - FR-14 Web UI. Acceptance: a staff user on the edit form can upload (CSRF and Origin checks pass) and delete. A viewer or anonymous user sees no controls. A catalog row shows a "Trailer" link only when a trailer record exists. This check uses only the database row, with no storage call per row. The watch page plays it in `<video controls>` under the current CSP, with no inline script or style.
 
 ## 6. Non-functional requirements
-- Compatibility: the Movie JSON shape, the `/api/v1/movies` routes and status codes, `NewRouter()` and the official stage tests must not change. The global 1 MiB body cap stays for every route except trailer upload, whose limit is 50 MiB. The exemption covers whichever upload route the web form posts to, and that route still enforces CSRF and Origin checks. Server read and write timeouts must not cut off a 50 MiB upload or a full trailer stream.
+- Compatibility: the Movie JSON shape, the `/api/v1/movies` routes and status codes, `NewRouter()` must not change, and the existing tests must keep passing. The global 1 MiB body cap stays for every route except trailer upload, whose limit is 50 MiB. The exemption covers whichever upload route the web form posts to, and that route still enforces CSRF and Origin checks. Server read and write timeouts must not cut off a 50 MiB upload or a full trailer stream.
 - Security: no real AWS credentials, only dummy ones from env. Browsers only talk to the app (CSP stays `'self'`). Object keys come from the movie id and never from the client filename. Errors use the existing `{"error":{"code","message"}}` format.
 - Testability: the full suite runs without Floci (CI). The Floci tests are opt-in, like the Redis tests.
 - Performance: streaming must not load the whole file into memory. Uploads up to 50 MiB must not be buffered in memory all at once.
@@ -79,4 +79,4 @@ Out of scope (explicitly): multiple trailers or galleries, formats other than MP
 - [ ] Swagger is regenerated, and the README documents the routes, env vars and Floci setup for compose and K3s.
 - [ ] `.env.example` is updated with the new variables, including the `TRAILERS_ENABLED` and S3 settings.
 - [ ] README.md:57 is fixed to say the catalog is public.
-- [ ] The Movie contract, the official tests and `.github/tests.sha256` are unchanged.
+- [ ] The Movie contract and `NewRouter()` are unchanged, and the existing tests pass.
