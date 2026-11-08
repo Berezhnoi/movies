@@ -5,7 +5,7 @@ input=$(cat)
 [ "$(echo "$input" | jq -r '.stop_hook_active')" = "true" ] && exit 0
 
 cd "$CLAUDE_PROJECT_DIR" || exit 0
-out=$(go build ./... 2>&1 && VARIANT="${VARIANT:-movies}" go test ./... 2>&1) || {
+out=$(go build ./... 2>&1 && go test ./... 2>&1) || {
   echo "Build or tests failed, fix before finishing:" >&2
   echo "$out" | tail -40 >&2
   exit 2

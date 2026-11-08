@@ -13,6 +13,15 @@ document.body.addEventListener("htmx:responseError", (event) => {
   if (toast) toast.textContent = messages[event.detail.xhr.status] || "Something went wrong";
 });
 
+// Trailer upload/delete errors return the section with a message; show it in place.
+document.body.addEventListener("htmx:beforeSwap", (event) => {
+  if (event.detail.target?.id !== "trailer-section") return;
+  if ([413, 415, 422, 500, 503].includes(event.detail.xhr.status)) {
+    event.detail.shouldSwap = true;
+    event.detail.isError = false;
+  }
+});
+
 document.body.addEventListener("movieDeleted", () => {
   const toast = document.getElementById("toast");
   if (toast) toast.textContent = "Movie deleted.";

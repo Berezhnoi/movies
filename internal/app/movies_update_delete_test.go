@@ -5,14 +5,14 @@ import (
 	"testing"
 )
 
-// Stage 3: update, delete, ids and timestamps.
+// Movie update, delete, ids and timestamps.
 
 func TestStage3_UpdateReplacesFieldsAndKeepsID(t *testing.T) {
 	e := newEnv(t)
 	created := e.create(e.valid())
 	id := idOf(t, created)
 
-	upd := with(with(e.payload("new", "cat-new"), e.v.OptInt, 1999), e.v.OptText, "updated")
+	upd := with(with(e.payload("new", "cat-new"), "release_year", 1999), "synopsis", "updated")
 	r := e.doJSON(http.MethodPut, e.item(id), upd)
 
 	e.expect(r, http.StatusOK)
@@ -20,16 +20,16 @@ func TestStage3_UpdateReplacesFieldsAndKeepsID(t *testing.T) {
 	if gotID := idOf(t, got); gotID != id {
 		t.Errorf("PUT must return the stored resource with the same id %d, got %d", id, gotID)
 	}
-	for _, f := range e.v.Required {
+	for _, f := range movieRequiredFields {
 		if got[f] != upd[f] {
 			t.Errorf("field %q: expected %v, got %v", f, upd[f], got[f])
 		}
 	}
-	if got[e.v.OptInt] != float64(1999) {
-		t.Errorf("field %q: expected 1999, got %v", e.v.OptInt, got[e.v.OptInt])
+	if got["release_year"] != float64(1999) {
+		t.Errorf("field %q: expected 1999, got %v", "release_year", got["release_year"])
 	}
-	if got[e.v.OptText] != "updated" {
-		t.Errorf("field %q: expected %q, got %v", e.v.OptText, "updated", got[e.v.OptText])
+	if got["synopsis"] != "updated" {
+		t.Errorf("field %q: expected %q, got %v", "synopsis", "updated", got["synopsis"])
 	}
 	if got["created_at"] != created["created_at"] {
 		t.Errorf("created_at must not change on update: was %v, now %v", created["created_at"], got["created_at"])
@@ -40,20 +40,20 @@ func TestStage3_UpdateReplacesFieldsAndKeepsID(t *testing.T) {
 
 	// the change must be persisted
 	again := e.do(http.MethodGet, e.item(id), "").obj(t)
-	if again[e.v.Required[0]] != upd[e.v.Required[0]] {
+	if again["title"] != upd["title"] {
 		t.Errorf("GET after PUT returned old data: %v", again)
 	}
 }
 
 func TestStage3_UpdateWithoutOptionalFieldsClearsThem(t *testing.T) {
 	e := newEnv(t)
-	id := idOf(t, e.create(with(with(e.valid(), e.v.OptInt, 2015), e.v.OptText, "text")))
+	id := idOf(t, e.create(with(with(e.valid(), "release_year", 2015), "synopsis", "text")))
 
 	r := e.doJSON(http.MethodPut, e.item(id), e.payload("other", "cat-other"))
 
 	e.expect(r, http.StatusOK)
 	got := r.obj(t)
-	for _, f := range []string{e.v.OptInt, e.v.OptText} {
+	for _, f := range []string{"release_year", "synopsis"} {
 		if val, present := got[f]; !present || val != nil {
 			t.Errorf("PUT replaces the whole resource, so omitted optional field %q must become null, got %v", f, val)
 		}

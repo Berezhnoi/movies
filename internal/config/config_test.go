@@ -147,3 +147,68 @@ func setDatabaseEnvironment(t *testing.T) {
 	t.Setenv("DB_PASSWORD", "test-password")
 	t.Setenv("DB_NAME", "movies")
 }
+
+func TestLoadTrailersGuardsS3Endpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		enabled  string
+		endpoint string
+		bucket   string
+		wantErr  string
+	}{
+		{name: "disabled without S3", enabled: "false"},
+		{name: "enabled without endpoint", enabled: "true", bucket: "trailers", wantErr: "S3_ENDPOINT_URL"},
+		{name: "enabled without bucket", enabled: "true", endpoint: "http://floci:4566", wantErr: "S3_BUCKET"},
+		{name: "real AWS host", enabled: "true", endpoint: "https://s3.amazonaws.com", bucket: "trailers", wantErr: "amazonaws.com"},
+		{name: "real AWS regional host", enabled: "true", endpoint: "https://bucket.s3.eu-west-1.amazonaws.com", bucket: "trailers", wantErr: "amazonaws.com"},
+		{name: "real AWS China host", enabled: "true", endpoint: "https://s3.cn-north-1.amazonaws.com.cn", bucket: "trailers", wantErr: "amazonaws.com"},
+		{name: "real AWS dual-stack host", enabled: "true", endpoint: "https://s3.dualstack.us-east-1.api.aws", bucket: "trailers", wantErr: "api.aws"},
+		{name: "upper-case AWS host", enabled: "true", endpoint: "https://S3.AMAZONAWS.COM.", bucket: "trailers", wantErr: "amazonaws.com"},
+		{name: "not http", enabled: "true", endpoint: "ftp://floci:4566", bucket: "trailers", wantErr: "S3_ENDPOINT_URL"},
+		{name: "no host", enabled: "true", endpoint: "http://", bucket: "trailers", wantErr: "S3_ENDPOINT_URL"},
+		{name: "Floci", enabled: "true", endpoint: "http://floci:4566", bucket: "trailers"},
+		{name: "look-alike host", enabled: "true", endpoint: "http://notamazonaws.com:4566", bucket: "trailers"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDatabaseEnvironment(t)
+			t.Setenv("JWT_SECRET", "test-secret-with-at-least-32-bytes")
+			t.Setenv("TRAILERS_ENABLED", tt.enabled)
+			t.Setenv("S3_ENDPOINT_URL", tt.endpoint)
+			t.Setenv("S3_BUCKET", tt.bucket)
+
+			cfg, err := Load()
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Load() error = %v, want it to mention %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.TrailersEnabled != (tt.enabled == "true") {
+				t.Errorf("TrailersEnabled = %t, want %s", cfg.TrailersEnabled, tt.enabled)
+			}
+		})
+	}
+}
+
+func TestLoadTrailerS3Defaults(t *testing.T) {
+	setDatabaseEnvironment(t)
+	t.Setenv("JWT_SECRET", "test-secret-with-at-least-32-bytes")
+	t.Setenv("TRAILERS_ENABLED", "true")
+	t.Setenv("S3_ENDPOINT_URL", "http://localhost:4566")
+	t.Setenv("S3_BUCKET", "trailers")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AWSRegion != "us-east-1" || cfg.AWSAccessKeyID != "test" || cfg.AWSSecretAccessKey != "test" {
+		t.Errorf("S3 defaults = (%q, %q, %q), want (us-east-1, test, test)", cfg.AWSRegion, cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey)
+	}
+}

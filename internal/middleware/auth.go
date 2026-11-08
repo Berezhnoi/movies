@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -8,6 +10,7 @@ import (
 
 	"homework/internal/apperr"
 	"homework/internal/auth"
+	"homework/internal/repository"
 )
 
 const (
@@ -15,7 +18,9 @@ const (
 	roleContextKey   = "role"
 )
 
-func AuthMiddleware(tokens *auth.TokenManager) gin.HandlerFunc {
+// AuthMiddleware loads the user on every request so role changes and
+// deletions take effect immediately instead of when the token expires.
+func AuthMiddleware(tokens *auth.TokenManager, users repository.UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if header == "" {
@@ -32,8 +37,17 @@ func AuthMiddleware(tokens *auth.TokenManager) gin.HandlerFunc {
 			abortUnauthorized(c, "invalid or expired token")
 			return
 		}
-		c.Set(userIDContextKey, claims.UserID)
-		c.Set(roleContextKey, claims.Role)
+		user, err := users.FindByID(c.Request.Context(), claims.UserID)
+		if err != nil {
+			if !errors.Is(err, repository.ErrNotFound) {
+				log.Printf("load API user: %v", err)
+				apperr.WriteError(c, err)
+				return
+			}
+			abortUnauthorized(c, "invalid or expired token")
+			return
+		}
+		SetPrincipal(c, claims.UserID, user.Role)
 		c.Next()
 	}
 }

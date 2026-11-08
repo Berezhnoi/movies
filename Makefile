@@ -1,8 +1,6 @@
 include .env
 export
 
-VARIANT ?= movies
-
 .PHONY: build verify-isolation db-up db-down db-logs migrate-up migrate-down migrate-create migrate-version migrate-force run run-api-only seed-admin test test-db test-integration swagger fmt vet
 
 build:
@@ -50,14 +48,15 @@ test:
 	env -u TEST_DATABASE_URL go test ./...
 
 test-db:
+	@test -n "$$TEST_DB_NAME" || (echo "TEST_DB_NAME is not set" >&2; exit 1)
 	@case "$$TEST_DB_NAME" in *_test) ;; *) echo "TEST_DB_NAME must end in _test" >&2; exit 1;; esac
 	@test "$$TEST_DB_NAME" != "$$DB_NAME" || (echo "TEST_DB_NAME must differ from DB_NAME" >&2; exit 1)
 	@docker compose up -d --wait db
-	@docker compose exec -T db sh -c 'if psql -U "$$POSTGRES_USER" -d postgres -lqt | cut -d "|" -f 1 | grep -qw "$$TEST_DB_NAME"; then echo "Test database exists"; else createdb -U "$$POSTGRES_USER" "$$TEST_DB_NAME"; fi'
+	@docker compose exec -T -e TEST_DB_NAME="$$TEST_DB_NAME" db sh -c 'if psql -U "$$POSTGRES_USER" -d postgres -Atc "SELECT datname FROM pg_database" | grep -qxF "$$TEST_DB_NAME"; then echo "Test database $$TEST_DB_NAME exists"; else createdb -U "$$POSTGRES_USER" -- "$$TEST_DB_NAME" || { echo "cannot create $$TEST_DB_NAME: the DB user needs CREATEDB (see README, Development)" >&2; exit 1; }; echo "Created test database $$TEST_DB_NAME"; fi'
 	@docker compose run --rm migrate -path=/migrations -database "$$TEST_DATABASE_DOCKER_URL" up
 
 test-integration: test-db
-	@go test -race ./internal/repository -run '^(TestGormRepositoryIntegration|TestGormUserRepositoryIntegration|TestGormMovieSearchIntegration)$$' -v
+	@go test -race ./internal/repository -run '^(TestGormRepositoryIntegration|TestGormUserRepositoryIntegration|TestGormMovieSearchIntegration|TestGormTrailerRepositoryIntegration)$$' -v
 
 swagger:
 	go run github.com/swaggo/swag/cmd/swag@v1.16.4 init -g main.go -d cmd/api,internal/handler,internal/model

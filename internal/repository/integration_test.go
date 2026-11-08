@@ -11,6 +11,9 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// trailerTruncateSQL clears trailers and the movies they reference.
+const trailerTruncateSQL = "TRUNCATE TABLE movie_trailers, movies, movie_directors, genres, directors, users RESTART IDENTITY CASCADE"
+
 func openIntegrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	databaseURL := os.Getenv("TEST_DATABASE_URL")

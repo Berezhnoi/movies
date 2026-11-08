@@ -120,12 +120,12 @@ func TestEdgeAuditIDsAndPutCheckOrder(t *testing.T) {
 
 func TestEdgeAuditPutPersistenceAndDeleteSemantics(t *testing.T) {
 	e := newEnv(t)
-	originalBody := with(with(e.valid(), e.v.OptInt, 2015), e.v.OptText, "original")
+	originalBody := with(with(e.valid(), "release_year", 2015), "synopsis", "original")
 	created := e.create(originalBody)
 	id := idOf(t, created)
 	oldUpdatedAt := created["updated_at"]
 
-	invalidUpdate := e.doJSON(http.MethodPut, e.item(id), with(e.valid(), e.v.Required[0], "   "))
+	invalidUpdate := e.doJSON(http.MethodPut, e.item(id), with(e.valid(), "title", "   "))
 	e.wantError(invalidUpdate, http.StatusUnprocessableEntity, "validation_error")
 	afterRejectedUpdate := e.do(http.MethodGet, e.item(id), "").obj(t)
 	if !reflect.DeepEqual(created, afterRejectedUpdate) {
@@ -144,7 +144,7 @@ func TestEdgeAuditPutPersistenceAndDeleteSemantics(t *testing.T) {
 	if updatedMovie["updated_at"] == oldUpdatedAt {
 		t.Errorf("updated_at did not change: %v", oldUpdatedAt)
 	}
-	if updatedMovie[e.v.OptInt] != nil || updatedMovie[e.v.OptText] != nil {
+	if updatedMovie["release_year"] != nil || updatedMovie["synopsis"] != nil {
 		t.Errorf("omitted optionals should be null: %v", updatedMovie)
 	}
 

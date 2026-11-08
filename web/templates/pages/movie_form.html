@@ -37,5 +37,6 @@
     </div>
     <button type="submit">{{.SubmitText}}</button>
   </form>
+  {{with .Trailer}}{{template "trailer_section" .}}{{end}}
 </section>
 {{end}}

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Stage 4: list, sorting, pagination and filter.
+// Movie list, sorting, pagination and filter.
 
 func TestStage4_EmptyListIsJSONArray(t *testing.T) {
 	e := newEnv(t)
@@ -90,7 +90,7 @@ func TestStage4_PagesCoverAllResourcesExactlyOnce(t *testing.T) {
 
 func TestStage4_FilterByFilterField(t *testing.T) {
 	e := newEnv(t)
-	filter := e.v.Filter()
+	filter := "genre"
 	for i := 1; i <= 3; i++ {
 		e.create(e.payload(fmt.Sprint("a", i), "a"))
 	}

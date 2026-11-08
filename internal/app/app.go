@@ -37,7 +37,18 @@ type Deps struct {
 	// Chat enables the movie chat when set; the caller starts the hub with go Chat.Run(ctx).
 	Chat               *chat.Hub
 	ChatAllowedOrigins []string
+	// TrailerStorage enables the trailer API when set; Trailers defaults to an in-memory repository.
+	TrailerStorage service.TrailerStorage
+	Trailers       repository.TrailerRepository
 }
+
+// The trailer upload routes are exempt from the global body limit; their
+// handlers apply their own. The web route also takes its CSRF token only from
+// the header, so CSRF, auth and role checks all run before the body is read.
+const (
+	trailerUploadRoute    = "PUT /api/v1/movies/:id/trailer"
+	webTrailerUploadRoute = "POST /movies/:id/trailer"
+)
 
 // NewRouter creates a router and a fresh in-memory repository for each call.
 func NewRouter() http.Handler {
@@ -90,13 +101,21 @@ func newRouter(deps Deps) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	// CORS must wrap recovery so panic responses also receive CORS headers.
-	router.Use(middleware.CORS(), middleware.Recovery(), middleware.RequestLogger(), middleware.RequestBodyLimit())
+	router.Use(middleware.CORS(), middleware.Recovery(), middleware.RequestLogger(), middleware.RequestBodyLimit(trailerUploadRoute, webTrailerUploadRoute))
 	router.HandleMethodNotAllowed = true
 	router.RedirectTrailingSlash = false
 	router.RedirectFixedPath = false
 
 	authService := service.NewAuthService(deps.Users, deps.Tokens)
+	var trailerService *service.TrailerService
 	movieService := service.NewMovieService(deps.Movies)
+	if deps.Secure && deps.TrailerStorage != nil {
+		if deps.Trailers == nil {
+			deps.Trailers = repository.NewInMemoryTrailerRepository()
+		}
+		trailerService = service.NewTrailerService(deps.Movies, deps.Trailers, deps.TrailerStorage)
+		movieService = service.NewMovieServiceWithTrailerCleanup(deps.Movies, trailerService)
+	}
 	movieHandler := handler.NewMovieHandler(movieService)
 	authHandler := handler.NewAuthHandler(authService)
 	userHandler := handler.NewUserHandler(service.NewUserService(deps.Users))
@@ -114,17 +133,20 @@ func newRouter(deps Deps) http.Handler {
 			panic(fmt.Errorf("initialize web static files: %w", err))
 		}
 		staticFS = http.FS(files)
-		catalogHandler = webhandler.NewCatalogHandler(deps.Catalog, movieService, renderer, deps.Chat != nil)
+		catalogHandler = webhandler.NewCatalogHandler(deps.Catalog, movieService, trailerService, renderer, deps.Chat != nil)
 	}
 
 	router.GET("/health", handler.Health)
 	api := router.Group("/api/v1")
 	if deps.Secure {
 		public := api.Group("")
-		protected := api.Group("", middleware.AuthMiddleware(deps.Tokens))
+		protected := api.Group("", middleware.AuthMiddleware(deps.Tokens, deps.Users))
 		staff := protected.Group("", middleware.RequireRole("editor", "admin"))
 		admin := protected.Group("", middleware.RequireRole("admin"))
 		handler.RegisterAPI(public, protected, staff, admin, movieHandler, authHandler, userHandler)
+		if trailerService != nil {
+			handler.RegisterTrailerAPI(public, staff, handler.NewTrailerHandler(trailerService))
+		}
 	} else {
 		handler.RegisterAPI(api, api, api, api, movieHandler, authHandler, userHandler)
 	}
@@ -143,7 +165,7 @@ func newRouter(deps Deps) http.Handler {
 
 		webAuthHandler := webhandler.NewAuthHandler(authService, renderer, deps.CookieSecure)
 		webRoutes := router.Group("")
-		webRoutes.Use(webSecurityHeaders(), webhandler.CSRF(deps.CookieSecure, renderer),
+		webRoutes.Use(webSecurityHeaders(), webhandler.CSRF(deps.CookieSecure, renderer, webTrailerUploadRoute),
 			webhandler.OptionalAuth(deps.Tokens, deps.Users, deps.CookieSecure))
 		webRoutes.GET("/catalog", catalogHandler.Catalog)
 		webRoutes.GET("/web/movies", catalogHandler.Movies)
@@ -158,6 +180,11 @@ func newRouter(deps Deps) http.Handler {
 		editorWebRoutes.POST("/movies/new", catalogHandler.CreateMovie)
 		editorWebRoutes.GET("/movies/:id/edit", catalogHandler.EditMoviePage)
 		editorWebRoutes.POST("/movies/:id/edit", catalogHandler.UpdateMovie)
+		if trailerService != nil {
+			webRoutes.GET("/movies/:id/trailer", catalogHandler.TrailerPage)
+			editorWebRoutes.POST("/movies/:id/trailer", catalogHandler.UploadTrailer)
+			editorWebRoutes.DELETE("/web/movies/:id/trailer", catalogHandler.DeleteTrailer)
+		}
 		adminWebRoutes := webRoutes.Group("", webhandler.RequireRole(renderer, "admin"))
 		adminWebRoutes.DELETE("/web/movies/:id", catalogHandler.DeleteMovie)
 		adminWebRoutes.GET("/register", webAuthHandler.RegisterPage)

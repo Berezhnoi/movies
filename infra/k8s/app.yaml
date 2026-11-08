@@ -23,6 +23,7 @@ spec:
           ports:
             - containerPort: 8080
           envFrom:
+            # Includes the trailer settings (TRAILERS_ENABLED, S3_ENDPOINT_URL, S3_BUCKET, AWS_*).
             - configMapRef: { name: movies-config }
             # WEBHOOK_URL comes from the Terraform output (make -C infra k8s-webhook).
             - configMapRef: { name: movies-webhook }
@@ -40,6 +41,13 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
+          # Trailer uploads spool to a temp file; the root filesystem is read-only.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 512Mi }
 ---
 apiVersion: v1
 kind: Service

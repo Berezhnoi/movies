@@ -1,0 +1,14 @@
+{{define "title"}}{{.Title}}{{end}}
+{{define "content"}}
+<section class="trailer-page">
+  <h1>Trailer: {{.MovieTitle}}</h1>
+  {{if .Unavailable}}
+  <p class="error-page" role="alert">Trailer unavailable</p>
+  {{else}}
+  <video class="trailer-video" controls preload="metadata" src="/api/v1/movies/{{.MovieID}}/trailer/video">
+    Your browser cannot play this video.
+  </video>
+  {{end}}
+  <p><a href="/catalog">Back to the catalog</a></p>
+</section>
+{{end}}

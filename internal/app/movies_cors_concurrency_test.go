@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// Stage 5: CORS and concurrency. Run with `go test -race ./...` to catch data races.
+// CORS and concurrency. Run with `go test -race ./...` to catch data races.
 
 func TestStage5_CORSPreflightReturns204(t *testing.T) {
 	e := newEnv(t)

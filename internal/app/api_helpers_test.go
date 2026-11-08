@@ -12,22 +12,23 @@ import (
 	"homework/internal/app"
 )
 
-// env bundles a fresh router with the student's variant.
+// movieRequiredFields are the required string fields of a movie. "genre" is also the list filter.
+var movieRequiredFields = []string{"title", "director", "country", "genre"}
+
+// env bundles a fresh unprotected router (app.NewRouter) for the movies API tests.
 type env struct {
 	t *testing.T
 	h http.Handler
-	v Variant
 }
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
 
-	v := mustVariant(t)
 	h := app.NewRouter()
 	if h == nil {
 		t.Fatal("app.NewRouter() returned nil")
 	}
-	return &env{t: t, h: h, v: v}
+	return &env{t: t, h: h}
 }
 
 type resp struct {
@@ -84,7 +85,7 @@ func (e *env) doJSON(method, path string, v any) resp {
 }
 
 func (e *env) base() string {
-	return "/api/v1/" + e.v.Resource
+	return "/api/v1/movies"
 }
 
 func (e *env) item(id any) string {
@@ -92,13 +93,13 @@ func (e *env) item(id any) string {
 }
 
 // payload returns a valid request body. Every required field gets a value derived from tag;
-// the filter field (the fourth required field) is set to filter.
+// the filter field "genre" is set to filter.
 func (e *env) payload(tag, filter string) map[string]any {
 	m := map[string]any{}
-	for _, f := range e.v.Required {
+	for _, f := range movieRequiredFields {
 		m[f] = f + "-" + tag
 	}
-	m[e.v.Filter()] = filter
+	m["genre"] = filter
 	return m
 }
 
