@@ -12,6 +12,8 @@ type TrailerRepository interface {
 	Get(ctx context.Context, movieID uint32) (model.Trailer, error)
 	// Upsert inserts or replaces the movie's trailer and reports whether it was new.
 	Upsert(ctx context.Context, trailer model.Trailer) (bool, error)
+	// Delete removes the movie's trailer; a missing row is not an error.
+	Delete(ctx context.Context, movieID uint32) error
 }
 
 type InMemoryTrailerRepository struct {
@@ -47,6 +49,23 @@ func (repository *InMemoryTrailerRepository) Upsert(ctx context.Context, trailer
 	_, exists := repository.items[trailer.MovieID]
 	repository.items[trailer.MovieID] = copyTrailer(trailer)
 	return !exists, nil
+}
+
+func (repository *InMemoryTrailerRepository) Delete(ctx context.Context, movieID uint32) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	delete(repository.items, movieID)
+	return nil
+}
+
+// Len returns the number of stored rows.
+func (repository *InMemoryTrailerRepository) Len() int {
+	repository.mu.RLock()
+	defer repository.mu.RUnlock()
+	return len(repository.items)
 }
 
 func copyTrailer(trailer model.Trailer) model.Trailer {

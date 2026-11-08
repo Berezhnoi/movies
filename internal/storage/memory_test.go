@@ -92,3 +92,40 @@ func readAll(t *testing.T, body io.ReadCloser) []byte {
 	}
 	return data
 }
+
+func TestMemoryFaultSwitches(t *testing.T) {
+	ctx := context.Background()
+	memory := NewMemory()
+	put := func() error { return memory.Put(ctx, "k", bytes.NewReader([]byte("x")), 1, "video/mp4") }
+	if err := put(); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+
+	memory.DropObject("k")
+	if _, err := memory.Head(ctx, "k"); !errors.Is(err, service.ErrObjectNotFound) {
+		t.Errorf("Head() after DropObject error = %v, want ErrObjectNotFound", err)
+	}
+
+	_ = put()
+	memory.DropBucket()
+	if _, err := memory.Get(ctx, "k", nil); !errors.Is(err, service.ErrObjectNotFound) {
+		t.Errorf("Get() after DropBucket error = %v, want ErrObjectNotFound", err)
+	}
+	if err := memory.Delete(ctx, "k"); !errors.Is(err, service.ErrObjectNotFound) {
+		t.Errorf("Delete() after DropBucket error = %v, want ErrObjectNotFound", err)
+	}
+	if err := put(); err != nil || memory.CreateBucketCalls() != 1 || memory.Len() != 1 {
+		t.Errorf("Put() after DropBucket = %v, CreateBucket calls %d, objects %d, want nil, 1, 1", err, memory.CreateBucketCalls(), memory.Len())
+	}
+
+	memory.SetUnavailable(true)
+	if err := put(); !errors.Is(err, service.ErrStorageUnavailable) {
+		t.Errorf("Put() while unavailable error = %v", err)
+	}
+	if _, err := memory.Head(ctx, "k"); !errors.Is(err, service.ErrStorageUnavailable) {
+		t.Errorf("Head() while unavailable error = %v", err)
+	}
+	if err := memory.Delete(ctx, "k"); !errors.Is(err, service.ErrStorageUnavailable) || memory.Len() != 1 {
+		t.Errorf("Delete() while unavailable error = %v, objects %d", err, memory.Len())
+	}
+}

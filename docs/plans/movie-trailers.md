@@ -100,7 +100,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   - with `NewRouter()`, `/api/v1/movies/1/trailer` → 404
 - Verify: `go test -race -count=1 ./internal/app -run Trailer` passes, and the full suite stays green.
 
-### T3: Replace, delete, lost object, storage down, movie-delete cleanup (#8)   (covers FR-2, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12)   depends on: T2
+### T3: Replace, delete, lost object, storage down, movie-delete cleanup (#8)   (covers FR-2, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12)   depends on: T2 **Status: done**
 - Goal: complete the lifecycle and failure behaviour using the fake's fault switches (drop object, drop bucket, unavailable).
 - Files:
   - `internal/service/trailer_service.go`, `internal/service/movie.go` (D8)

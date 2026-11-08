@@ -2,9 +2,12 @@ package app_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -25,10 +28,16 @@ import (
 
 type trailerTestEnv struct {
 	*authTestEnv
-	storage *storage.Memory
+	storage  *storage.Memory
+	trailers *repository.InMemoryTrailerRepository
 }
 
 func newTrailerTestEnv(t *testing.T) *trailerTestEnv {
+	t.Helper()
+	return newTrailerTestEnvWithRepository(t, repository.NewInMemoryTrailerRepository())
+}
+
+func newTrailerTestEnvWithRepository(t *testing.T, trailers repository.TrailerRepository) *trailerTestEnv {
 	t.Helper()
 
 	users := repository.NewInMemoryUserRepository()
@@ -37,6 +46,7 @@ func newTrailerTestEnv(t *testing.T) *trailerTestEnv {
 		t.Fatalf("NewTokenManager() error = %v", err)
 	}
 	objects := storage.NewMemory()
+	inMemory, _ := trailers.(*repository.InMemoryTrailerRepository)
 	return &trailerTestEnv{
 		authTestEnv: &authTestEnv{
 			router: app.NewRouterWithDeps(app.Deps{
@@ -44,11 +54,13 @@ func newTrailerTestEnv(t *testing.T) *trailerTestEnv {
 				Users:          users,
 				Tokens:         tokens,
 				TrailerStorage: objects,
+				Trailers:       trailers,
 			}),
 			users:  users,
 			tokens: tokens,
 		},
-		storage: objects,
+		storage:  objects,
+		trailers: inMemory,
 	}
 }
 
@@ -427,6 +439,7 @@ func TestTrailer_RoutesAbsentWithoutStorage(t *testing.T) {
 			httptest.NewRequest(http.MethodGet, "/api/v1/movies/1/trailer", nil),
 			httptest.NewRequest(http.MethodGet, "/api/v1/movies/1/trailer/video", nil),
 			httptest.NewRequest(http.MethodPut, "/api/v1/movies/1/trailer", strings.NewReader("x")),
+			httptest.NewRequest(http.MethodDelete, "/api/v1/movies/1/trailer", nil),
 		} {
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
@@ -457,4 +470,264 @@ func TestTrailer_UploadOverGlobalBodyLimit(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("upload of a 2 MiB trailer status = %d, want 201: %s", response.Code, response.Body)
 	}
+}
+
+func TestTrailer_ReplaceReturnsNewBytes(t *testing.T) {
+	env := newTrailerTestEnv(t)
+	editor := env.tokenFor(t, model.RoleEditor)
+	id := movieIDText(env.createMovie(t, editor))
+
+	if response := env.upload(t, id, editor, mp4Bytes(1000)); response.Code != http.StatusCreated {
+		t.Fatalf("first upload status = %d, want 201: %s", response.Code, response.Body)
+	}
+	replacement := mp4Bytes(600)
+	replacement[599] = 0xAB
+	response := env.upload(t, id, editor, replacement)
+	if response.Code != http.StatusOK {
+		t.Fatalf("replace status = %d, want 200: %s", response.Code, response.Body)
+	}
+	stream := env.get("/api/v1/movies/"+id+"/trailer/video", "")
+	if stream.Code != http.StatusOK || !bytes.Equal(stream.Body, replacement) {
+		t.Errorf("stream after replace status = %d, %d bytes, want 200 with the new %d bytes", stream.Code, len(stream.Body), len(replacement))
+	}
+	if env.storage.Len() != 1 || env.trailers.Len() != 1 {
+		t.Errorf("after replace objects = %d, rows = %d, want 1, 1", env.storage.Len(), env.trailers.Len())
+	}
+}
+
+func (e *trailerTestEnv) uploadMovieWithTrailer(t *testing.T, editor string) string {
+	t.Helper()
+	id := movieIDText(e.createMovie(t, editor))
+	if response := e.upload(t, id, editor, mp4Bytes(1000)); response.Code != http.StatusCreated {
+		t.Fatalf("upload status = %d, want 201: %s", response.Code, response.Body)
+	}
+	return id
+}
+
+func (e *trailerTestEnv) assertReads(t *testing.T, id string, status int, code string) {
+	t.Helper()
+	for _, path := range []string{"/api/v1/movies/" + id + "/trailer", "/api/v1/movies/" + id + "/trailer/video"} {
+		response := e.get(path, "")
+		if response.Code != status {
+			t.Errorf("GET %s status = %d, want %d: %s", path, response.Code, status, response.Body)
+			continue
+		}
+		assertRBACError(t, response, code)
+	}
+}
+
+// captureLog sends the standard logger to a buffer for the rest of the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buffer bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&buffer)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	return &buffer
+}
+
+func TestTrailer_LostObject(t *testing.T) {
+	env := newTrailerTestEnv(t)
+	editor := env.tokenFor(t, model.RoleEditor)
+	id := env.uploadMovieWithTrailer(t, editor)
+	logs := captureLog(t)
+
+	env.storage.DropObject("trailers/" + id + ".mp4")
+	env.assertReads(t, id, http.StatusNotFound, "trailer_unavailable")
+	if env.trailers.Len() != 1 {
+		t.Errorf("rows after lost object = %d, want 1", env.trailers.Len())
+	}
+	if !strings.Contains(logs.String(), "trailer object missing: movie_id="+id) {
+		t.Errorf("log = %q, want a lost-object warning with movie_id=%s", logs, id)
+	}
+
+	if response := env.upload(t, id, editor, mp4Bytes(500)); response.Code != http.StatusOK {
+		t.Fatalf("re-upload status = %d, want 200: %s", response.Code, response.Body)
+	}
+	if response := env.get("/api/v1/movies/"+id+"/trailer/video", ""); response.Code != http.StatusOK || len(response.Body) != 500 {
+		t.Errorf("stream after re-upload status = %d, %d bytes, want 200 with 500 bytes", response.Code, len(response.Body))
+	}
+}
+
+func TestTrailer_LostBucket(t *testing.T) {
+	env := newTrailerTestEnv(t)
+	editor := env.tokenFor(t, model.RoleEditor)
+	id := env.uploadMovieWithTrailer(t, editor)
+
+	env.storage.DropBucket()
+	env.assertReads(t, id, http.StatusNotFound, "trailer_unavailable")
+	if env.trailers.Len() != 1 {
+		t.Errorf("rows after lost bucket = %d, want 1", env.trailers.Len())
+	}
+
+	other := movieIDText(env.createMovie(t, editor))
+	if response := env.upload(t, other, editor, mp4Bytes(300)); response.Code != http.StatusCreated {
+		t.Fatalf("upload after lost bucket status = %d, want 201: %s", response.Code, response.Body)
+	}
+	if env.storage.CreateBucketCalls() != 1 {
+		t.Errorf("CreateBucket calls = %d, want 1", env.storage.CreateBucketCalls())
+	}
+	if response := env.get("/api/v1/movies/"+other+"/trailer/video", ""); response.Code != http.StatusOK {
+		t.Errorf("stream after bucket recovery status = %d, want 200", response.Code)
+	}
+}
+
+func TestTrailer_Delete(t *testing.T) {
+	env := newTrailerTestEnv(t)
+	editor := env.tokenFor(t, model.RoleEditor)
+	id := env.uploadMovieWithTrailer(t, editor)
+	logs := captureLog(t)
+
+	response := env.do(http.MethodDelete, "/api/v1/movies/"+id+"/trailer", "", editor)
+	if response.Code != http.StatusNoContent || len(response.Body) != 0 {
+		t.Fatalf("delete status = %d, want 204 with no body: %s", response.Code, response.Body)
+	}
+	if env.storage.Len() != 0 || env.trailers.Len() != 0 {
+		t.Errorf("after delete objects = %d, rows = %d, want 0, 0", env.storage.Len(), env.trailers.Len())
+	}
+	env.assertReads(t, id, http.StatusNotFound, "not_found")
+	if !strings.Contains(logs.String(), "trailer deleted: movie_id="+id) {
+		t.Errorf("log = %q, want a delete entry with movie_id=%s", logs, id)
+	}
+
+	response = env.do(http.MethodDelete, "/api/v1/movies/"+id+"/trailer", "", editor)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("second delete status = %d, want 404: %s", response.Code, response.Body)
+	}
+	assertRBACError(t, response, "not_found")
+}
+
+func TestTrailer_DeleteAuthAndID(t *testing.T) {
+	env := newTrailerTestEnv(t)
+	editor := env.tokenFor(t, model.RoleEditor)
+	viewer := env.tokenFor(t, model.RoleViewer)
+	id := env.uploadMovieWithTrailer(t, editor)
+
+	tests := []struct {
+		name, path, token, code string
+		status                  int
+	}{
+		{name: "no token", path: id, status: http.StatusUnauthorized, code: "unauthorized"},
+		{name: "viewer", path: id, token: viewer, status: http.StatusForbidden, code: "forbidden"},
+		{name: "malformed id", path: "abc", token: editor, status: http.StatusBadRequest, code: "invalid_id"},
+	}
+	for _, test := range tests {
+		response := env.do(http.MethodDelete, "/api/v1/movies/"+test.path+"/trailer", "", test.token)
+		if response.Code != test.status {
+			t.Errorf("%s: status = %d, want %d: %s", test.name, response.Code, test.status, response.Body)
+			continue
+		}
+		assertRBACError(t, response, test.code)
+	}
+	if env.trailers.Len() != 1 {
+		t.Errorf("rows = %d, want 1", env.trailers.Len())
+	}
+}
+
+func TestTrailer_DeleteStaleRecord(t *testing.T) {
+	env := newTrailerTestEnv(t)
+	editor := env.tokenFor(t, model.RoleEditor)
+	for name, lose := range map[string]func(id string){
+		"lost object": func(id string) { env.storage.DropObject("trailers/" + id + ".mp4") },
+		"lost bucket": func(string) { env.storage.DropBucket() },
+	} {
+		id := env.uploadMovieWithTrailer(t, editor)
+		lose(id)
+		if response := env.do(http.MethodDelete, "/api/v1/movies/"+id+"/trailer", "", editor); response.Code != http.StatusNoContent {
+			t.Fatalf("%s: delete status = %d, want 204: %s", name, response.Code, response.Body)
+		}
+		env.assertReads(t, id, http.StatusNotFound, "not_found")
+		if response := env.upload(t, id, editor, mp4Bytes(200)); response.Code != http.StatusCreated {
+			t.Errorf("%s: upload after cleanup status = %d, want 201: %s", name, response.Code, response.Body)
+		}
+	}
+}
+
+func TestTrailer_StorageUnavailable(t *testing.T) {
+	env := newTrailerTestEnv(t)
+	editor := env.tokenFor(t, model.RoleEditor)
+	id := env.uploadMovieWithTrailer(t, editor)
+	other := movieIDText(env.createMovie(t, editor))
+	logs := captureLog(t)
+
+	env.storage.SetUnavailable(true)
+	responses := map[string]authTestResponse{
+		"upload":   env.upload(t, other, editor, mp4Bytes(100)),
+		"replace":  env.upload(t, id, editor, mp4Bytes(100)),
+		"metadata": env.get("/api/v1/movies/"+id+"/trailer", ""),
+		"stream":   env.get("/api/v1/movies/"+id+"/trailer/video", ""),
+		"delete":   env.do(http.MethodDelete, "/api/v1/movies/"+id+"/trailer", "", editor),
+	}
+	for name, response := range responses {
+		if response.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s status = %d, want 503: %s", name, response.Code, response.Body)
+			continue
+		}
+		assertRBACError(t, response, "storage_unavailable")
+	}
+	if env.trailers.Len() != 1 {
+		t.Errorf("rows after failed delete = %d, want 1", env.trailers.Len())
+	}
+	if response := env.get("/api/v1/movies", ""); response.Code != http.StatusOK {
+		t.Errorf("GET /api/v1/movies status = %d, want 200", response.Code)
+	}
+	if !strings.Contains(logs.String(), "trailer storage error: movie_id="+id) {
+		t.Errorf("log = %q, want a storage error with movie_id=%s", logs, id)
+	}
+
+	env.storage.SetUnavailable(false)
+	if response := env.get("/api/v1/movies/"+id+"/trailer", ""); response.Code != http.StatusOK {
+		t.Errorf("metadata after recovery status = %d, want 200: %s", response.Code, response.Body)
+	}
+}
+
+func TestTrailer_MovieDeleteRemovesTrailer(t *testing.T) {
+	env := newTrailerTestEnv(t)
+	admin := env.tokenFor(t, model.RoleAdmin)
+	id := env.uploadMovieWithTrailer(t, admin)
+
+	if response := env.do(http.MethodDelete, "/api/v1/movies/"+id, "", admin); response.Code != http.StatusNoContent {
+		t.Fatalf("movie delete status = %d, want 204: %s", response.Code, response.Body)
+	}
+	if env.storage.Len() != 0 || env.trailers.Len() != 0 {
+		t.Errorf("after movie delete objects = %d, rows = %d, want 0, 0", env.storage.Len(), env.trailers.Len())
+	}
+}
+
+func TestTrailer_MovieDeleteIgnoresStorageFailure(t *testing.T) {
+	env := newTrailerTestEnv(t)
+	admin := env.tokenFor(t, model.RoleAdmin)
+	id := env.uploadMovieWithTrailer(t, admin)
+	logs := captureLog(t)
+
+	env.storage.SetUnavailable(true)
+	if response := env.do(http.MethodDelete, "/api/v1/movies/"+id, "", admin); response.Code != http.StatusNoContent {
+		t.Fatalf("movie delete status = %d, want 204: %s", response.Code, response.Body)
+	}
+	if env.trailers.Len() != 0 {
+		t.Errorf("rows after movie delete = %d, want 0", env.trailers.Len())
+	}
+	if !strings.Contains(logs.String(), "trailer object not removed: movie_id="+id) {
+		t.Errorf("log = %q, want an object cleanup failure with movie_id=%s", logs, id)
+	}
+}
+
+type failingUpsertRepository struct {
+	*repository.InMemoryTrailerRepository
+}
+
+func (failingUpsertRepository) Upsert(context.Context, model.Trailer) (bool, error) {
+	return false, errors.New("database is down")
+}
+
+func TestTrailer_UploadRepositoryFailure(t *testing.T) {
+	env := newTrailerTestEnvWithRepository(t, failingUpsertRepository{repository.NewInMemoryTrailerRepository()})
+	editor := env.tokenFor(t, model.RoleEditor)
+	id := movieIDText(env.createMovie(t, editor))
+
+	response := env.upload(t, id, editor, mp4Bytes(100))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("upload status = %d, want 500: %s", response.Code, response.Body)
+	}
+	assertRBACError(t, response, "internal_server_error")
 }

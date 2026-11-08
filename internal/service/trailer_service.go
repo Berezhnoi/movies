@@ -34,6 +34,8 @@ type TrailerStorage interface {
 	Head(ctx context.Context, key string) (int64, error)
 	// Get opens the object, or only byteRange of it when byteRange is not nil.
 	Get(ctx context.Context, key string, byteRange *ByteRange) (StoredObject, error)
+	// Delete removes the object; a missing key is not an error.
+	Delete(ctx context.Context, key string) error
 }
 
 // ByteRange is an inclusive, already validated byte range.
@@ -104,7 +106,7 @@ func (service *TrailerService) Upload(ctx context.Context, movieID uint32, file 
 
 	key := TrailerObjectKey(movieID)
 	if err := service.storage.Put(ctx, key, spool, size, model.TrailerContentType); err != nil {
-		return model.Trailer{}, false, fmt.Errorf("store trailer: %w", err)
+		return model.Trailer{}, false, storageError(movieID, err)
 	}
 	trailer := model.Trailer{
 		MovieID:     movieID,
@@ -159,6 +161,35 @@ func (service *TrailerService) Open(ctx context.Context, movieID uint32, rangeHe
 	return object, nil
 }
 
+// Delete removes the trailer. A missing object or bucket still removes the
+// row; a storage outage keeps it so the delete can be retried.
+func (service *TrailerService) Delete(ctx context.Context, movieID uint32) error {
+	trailer, err := service.get(ctx, movieID)
+	if err != nil {
+		return err
+	}
+	if err := service.storage.Delete(ctx, trailer.ObjectKey); err != nil && !errors.Is(err, ErrObjectNotFound) {
+		return storageError(movieID, err)
+	}
+	if err := service.trailers.Delete(ctx, movieID); err != nil {
+		return fmt.Errorf("trailer repository: %w", err)
+	}
+	log.Printf("trailer deleted: movie_id=%d", movieID)
+	return nil
+}
+
+// RemoveMovieTrailer cleans up after a movie delete. Failures are only logged,
+// so they never fail the movie delete.
+func (service *TrailerService) RemoveMovieTrailer(ctx context.Context, movieID uint32) {
+	if err := service.trailers.Delete(ctx, movieID); err != nil {
+		log.Printf("movie deleted but trailer row not removed: movie_id=%d: %v", movieID, err)
+	}
+	err := service.storage.Delete(ctx, TrailerObjectKey(movieID))
+	if err != nil && !errors.Is(err, ErrObjectNotFound) {
+		log.Printf("movie deleted but trailer object not removed: movie_id=%d: %v", movieID, err)
+	}
+}
+
 func (service *TrailerService) get(ctx context.Context, movieID uint32) (model.Trailer, error) {
 	trailer, err := service.trailers.Get(ctx, movieID)
 	if errors.Is(err, repository.ErrNotFound) {
@@ -172,7 +203,7 @@ func (service *TrailerService) get(ctx context.Context, movieID uint32) (model.T
 
 func storageError(movieID uint32, err error) error {
 	if errors.Is(err, ErrObjectNotFound) {
-		log.Printf("trailer object missing: movie_id=%d", movieID)
+		log.Printf("warning: trailer object missing: movie_id=%d: %v", movieID, err)
 		return TrailerUnavailableError{}
 	}
 	log.Printf("trailer storage error: movie_id=%d: %v", movieID, err)

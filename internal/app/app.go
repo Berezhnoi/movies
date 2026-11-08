@@ -102,7 +102,15 @@ func newRouter(deps Deps) http.Handler {
 	router.RedirectFixedPath = false
 
 	authService := service.NewAuthService(deps.Users, deps.Tokens)
+	var trailerService *service.TrailerService
 	movieService := service.NewMovieService(deps.Movies)
+	if deps.Secure && deps.TrailerStorage != nil {
+		if deps.Trailers == nil {
+			deps.Trailers = repository.NewInMemoryTrailerRepository()
+		}
+		trailerService = service.NewTrailerService(deps.Movies, deps.Trailers, deps.TrailerStorage)
+		movieService = service.NewMovieServiceWithTrailerCleanup(deps.Movies, trailerService)
+	}
 	movieHandler := handler.NewMovieHandler(movieService)
 	authHandler := handler.NewAuthHandler(authService)
 	userHandler := handler.NewUserHandler(service.NewUserService(deps.Users))
@@ -131,11 +139,7 @@ func newRouter(deps Deps) http.Handler {
 		staff := protected.Group("", middleware.RequireRole("editor", "admin"))
 		admin := protected.Group("", middleware.RequireRole("admin"))
 		handler.RegisterAPI(public, protected, staff, admin, movieHandler, authHandler, userHandler)
-		if deps.TrailerStorage != nil {
-			if deps.Trailers == nil {
-				deps.Trailers = repository.NewInMemoryTrailerRepository()
-			}
-			trailerService := service.NewTrailerService(deps.Movies, deps.Trailers, deps.TrailerStorage)
+		if trailerService != nil {
 			handler.RegisterTrailerAPI(public, staff, handler.NewTrailerHandler(trailerService))
 		}
 	} else {

@@ -18,6 +18,12 @@ import (
 
 type MovieService struct {
 	repository repository.MovieRepository
+	trailers   TrailerCleaner
+}
+
+// TrailerCleaner removes a deleted movie's trailer and only logs failures.
+type TrailerCleaner interface {
+	RemoveMovieTrailer(ctx context.Context, movieID uint32)
 }
 
 type ValidationError struct {
@@ -58,6 +64,12 @@ func (paginationError InvalidPaginationError) Error() string { return pagination
 
 func NewMovieService(repository repository.MovieRepository) *MovieService {
 	return &MovieService{repository: repository}
+}
+
+// NewMovieServiceWithTrailerCleanup also removes a movie's trailer after the
+// movie is deleted.
+func NewMovieServiceWithTrailerCleanup(repository repository.MovieRepository, cleaner TrailerCleaner) *MovieService {
+	return &MovieService{repository: repository, trailers: cleaner}
 }
 
 func ValidateMovieJSON(body []byte) (model.MovieInput, error) {
@@ -178,7 +190,13 @@ func (service *MovieService) Replace(ctx context.Context, id uint32, body []byte
 }
 
 func (service *MovieService) Delete(ctx context.Context, id uint32) error {
-	return repositoryError(repositoryDelete(ctx, service.repository, id))
+	if err := repositoryDelete(ctx, service.repository, id); err != nil {
+		return repositoryError(err)
+	}
+	if service.trailers != nil {
+		service.trailers.RemoveMovieTrailer(ctx, id)
+	}
+	return nil
 }
 
 func (service *MovieService) ListPage(ctx context.Context, filter, pageValue, limitValue string, hasPage, hasLimit bool) ([]model.Movie, error) {

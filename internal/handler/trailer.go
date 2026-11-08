@@ -36,6 +36,7 @@ func RegisterTrailerAPI(public, staff *gin.RouterGroup, trailers *TrailerHandler
 	public.GET("/movies/:id/trailer/video", trailers.stream)
 
 	staff.PUT("/movies/:id/trailer", trailers.upload)
+	staff.DELETE("/movies/:id/trailer", trailers.delete)
 }
 
 // upload godoc
@@ -166,6 +167,34 @@ func (handler *TrailerHandler) stream(c *gin.Context) {
 	c.Status(status)
 	// A copy error means the client went away; the status is already sent.
 	_, _ = io.Copy(c.Writer, object.Body)
+}
+
+// delete godoc
+// @Summary Delete a movie trailer
+// @Description Removes the trailer. A trailer whose video is already missing from storage is still removed.
+// @Tags trailers
+// @Produce json
+// @Param id path int64 true "Movie ID" minimum(0) maximum(4294967295)
+// @Security BearerAuth
+// @Success 204 "Trailer deleted"
+// @Failure 400 {object} model.ErrorResponse
+// @Failure 401 {object} model.ErrorResponse
+// @Failure 403 {object} model.ErrorResponse
+// @Failure 404 {object} model.ErrorResponse
+// @Failure 503 {object} model.ErrorResponse "Storage unavailable; the trailer is kept"
+// @Router /movies/{id}/trailer [delete]
+func (handler *TrailerHandler) delete(c *gin.Context) {
+	id, err := parseID(c)
+	if err != nil {
+		apperr.WriteError(c, err)
+		return
+	}
+	if err := handler.service.Delete(c.Request.Context(), id); err != nil {
+		apperr.WriteError(c, err)
+		return
+	}
+	c.Header("Content-Length", "0")
+	c.Status(http.StatusNoContent)
 }
 
 func trailerFilePart(request *http.Request) (*multipart.Part, error) {

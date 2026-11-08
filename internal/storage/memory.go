@@ -11,9 +11,14 @@ import (
 )
 
 // Memory is an in-memory TrailerStorage for tests and local runs without Floci.
+// Its fault switches simulate a Floci restart (DropObject, DropBucket) and an
+// outage (SetUnavailable).
 type Memory struct {
-	mu      sync.RWMutex
-	objects map[string][]byte
+	mu            sync.RWMutex
+	objects       map[string][]byte
+	bucketMissing bool
+	unavailable   bool
+	createBucket  int
 }
 
 var _ service.TrailerStorage = (*Memory)(nil)
@@ -32,6 +37,14 @@ func (memory *Memory) Put(ctx context.Context, key string, body io.ReadSeeker, s
 	}
 	memory.mu.Lock()
 	defer memory.mu.Unlock()
+	if memory.unavailable {
+		return fmt.Errorf("put %q: %w", key, service.ErrStorageUnavailable)
+	}
+	// Like the S3 storage, a put into a missing bucket creates it first.
+	if memory.bucketMissing {
+		memory.bucketMissing = false
+		memory.createBucket++
+	}
 	memory.objects[key] = data
 	return nil
 }
@@ -57,15 +70,51 @@ func (memory *Memory) Get(ctx context.Context, key string, byteRange *service.By
 	}, nil
 }
 
-// Delete removes the object; a missing key is not an error, as in S3.
+// Delete removes the object; a missing key is not an error, as in S3, but a
+// missing bucket is.
 func (memory *Memory) Delete(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	memory.mu.Lock()
 	defer memory.mu.Unlock()
+	if memory.unavailable {
+		return fmt.Errorf("delete %q: %w", key, service.ErrStorageUnavailable)
+	}
+	if memory.bucketMissing {
+		return fmt.Errorf("delete %q: bucket: %w", key, service.ErrObjectNotFound)
+	}
 	delete(memory.objects, key)
 	return nil
+}
+
+// DropObject removes one object without going through Delete.
+func (memory *Memory) DropObject(key string) {
+	memory.mu.Lock()
+	defer memory.mu.Unlock()
+	delete(memory.objects, key)
+}
+
+// DropBucket removes the bucket and every object in it.
+func (memory *Memory) DropBucket() {
+	memory.mu.Lock()
+	defer memory.mu.Unlock()
+	memory.objects = make(map[string][]byte)
+	memory.bucketMissing = true
+}
+
+// SetUnavailable makes every call fail with service.ErrStorageUnavailable.
+func (memory *Memory) SetUnavailable(unavailable bool) {
+	memory.mu.Lock()
+	defer memory.mu.Unlock()
+	memory.unavailable = unavailable
+}
+
+// CreateBucketCalls returns how many times a put recreated the bucket.
+func (memory *Memory) CreateBucketCalls() int {
+	memory.mu.RLock()
+	defer memory.mu.RUnlock()
+	return memory.createBucket
 }
 
 // Len returns the number of stored objects.
@@ -81,6 +130,12 @@ func (memory *Memory) object(ctx context.Context, key string) ([]byte, error) {
 	}
 	memory.mu.RLock()
 	defer memory.mu.RUnlock()
+	if memory.unavailable {
+		return nil, fmt.Errorf("object %q: %w", key, service.ErrStorageUnavailable)
+	}
+	if memory.bucketMissing {
+		return nil, fmt.Errorf("object %q: bucket: %w", key, service.ErrObjectNotFound)
+	}
 	data, ok := memory.objects[key]
 	if !ok {
 		return nil, fmt.Errorf("object %q: %w", key, service.ErrObjectNotFound)
