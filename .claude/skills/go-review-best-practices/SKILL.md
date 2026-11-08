@@ -1,6 +1,6 @@
 ---
 name: go-review-best-practices
-description: Review Go code and apply Go best practices in the Movies project: layering, errors, context, concurrency, security, tests. Use for code reviews, pre-commit checks and cleanup of Go changes.
+description: Go quality checklist (layering, errors, context, concurrency, DB, tests) for reviewing, refactoring or cleaning up code here; security audits use /security-check.
 ---
 
 # Go code review and best practices (Movies project)
@@ -9,8 +9,8 @@ Use this skill when asked to review Go code, check a change before a commit, or 
 
 ## Rules
 - Review first, change later. Do not edit files during a review unless asked to fix.
-- Never change behaviour or contracts while cleaning up: REST routes and status codes, the error JSON `{"error":{"code","message"}}`, auth and roles, the gRPC proto, the chat protocol, env var names. If a fix would change one, list it as "needs decision".
-- Skip generated code (`*.pb.go`, `gen/`).
+- Never change behaviour or contracts while cleaning up: REST routes and status codes, the error JSON `{"error":{"code","message"}}`, auth and roles, the chat protocol, env var names. If a fix would change one, list it as "needs decision".
+- Skip generated code (`docs/docs.go`, `docs/swagger.*`) and vendored `htmx.min.js`.
 - Every finding needs `path:line`, the problem, and a concrete fix. Do not report what you did not verify in the code.
 
 ## Process
@@ -33,7 +33,6 @@ Use this skill when asked to review Go code, check a change before a commit, or 
 - No ignored errors (`_ =` needs a reason). Wrap with `fmt.Errorf("...: %w", err)`, check with `errors.Is/As`.
 - Handlers return the project's error JSON and the right status (400 invalid id, 401 unauthenticated, 403 forbidden, 404 not found, 422 validation).
 - Never leak internals (SQL, stack traces, file paths) in responses.
-- gRPC handlers use `status.Errorf` with `codes.*`, never plain errors.
 - No `panic` for expected failures; recover only at the edge.
 
 ### Concurrency
@@ -50,16 +49,15 @@ Use this skill when asked to review Go code, check a change before a commit, or 
 - All input validated (type, range, length). SQL only through GORM parameters or `?` placeholders.
 - CORS and WebSocket `CheckOrigin` use an allowlist, never `return true`.
 - Webhooks verify HMAC signature and timestamp with constant-time comparison.
-- Plaintext gRPC and mock credentials only for local development, and said so in a comment.
+- Mock credentials only for local development, and said so in a comment.
 
 ### Database
 - Migrations apply in order and are reversible; constraints and indexes match the queries.
 - No N+1 queries (use Preload or joins). Transactions where several writes must succeed together.
 - Connection pool settings are set. Rows are closed; errors from `rows.Err()` are checked.
 
-### HTTP, gRPC, WebSocket
+### HTTP, WebSocket
 - Pagination has limits; list endpoints never return unbounded data.
-- Streaming handlers watch `stream.Context().Done()`.
 - WebSocket: one writer per connection (the write pump), ping/pong with deadlines, `SetReadLimit`, author taken from the JWT, never from the client.
 
 ### Tests
@@ -67,7 +65,7 @@ Use this skill when asked to review Go code, check a change before a commit, or 
 - Cover negative paths (401 vs 403, invalid input, unknown id, boundaries), not only the happy path.
 - No `time.Sleep` for synchronization: poll with a timeout.
 - Integration tests are gated by an env var (e.g. `TEST_DATABASE_URL`, `TEST_REDIS_URL`) and skip when unset.
-- Use `httptest` for HTTP and WebSocket, `bufconn` for gRPC. File names end in `_test.go` and test names start with `Test`.
+- Use `httptest` for HTTP and WebSocket. File names end in `_test.go` and test names start with `Test`.
 - Do not write tests that only repeat the implementation.
 
 ### Style and simplicity

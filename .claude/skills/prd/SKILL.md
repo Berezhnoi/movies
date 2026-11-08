@@ -1,4 +1,9 @@
-PRD: product requirements for a feature (Movies project)
+---
+name: prd
+description: Writes a testable PRD (what and why, no design) to docs/prd/<slug>.md; use at the start of a big feature, before feature-plan.
+---
+
+# PRD: product requirements for a feature (Movies project)
 Use this skill at the START of a big feature, before planning or coding. A PRD says WHAT and WHY, never HOW. The output is one short, testable document that the feature-plan skill will use later.
 
 Rules

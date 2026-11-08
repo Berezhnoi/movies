@@ -1,6 +1,6 @@
 ---
 name: plan-to-issues
-description: Turn an approved implementation plan into GitHub issues: one tracking issue plus one issue per task, with dependencies and verification. Use after feature-plan and before implementation.
+description: Turns an approved docs/plans/<slug>.md into GitHub issues (tracking issue + one per task); use after feature-plan, before implementation.
 ---
 
 # Plan to GitHub issues (Movies project)

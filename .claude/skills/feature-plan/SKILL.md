@@ -1,4 +1,9 @@
-Feature plan: from PRD to tasks (Movies project)
+---
+name: feature-plan
+description: Turns an approved docs/prd/<slug>.md into a small-step plan in docs/plans/<slug>.md covering every requirement; use after prd, before plan-to-issues.
+---
+
+# Feature plan: from PRD to tasks (Movies project)
 Use this skill after a PRD exists in docs/prd/<slug>.md. A plan says HOW, in small steps, and proves that every requirement is covered. Output: one file, docs/plans/<slug>.md. No source code is changed.
 
 Rules
