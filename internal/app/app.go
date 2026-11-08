@@ -43,7 +43,8 @@ type Deps struct {
 }
 
 // The trailer upload routes are exempt from the global body limit; their
-// handlers apply their own.
+// handlers apply their own. The web route also takes its CSRF token only from
+// the header, so CSRF, auth and role checks all run before the body is read.
 const (
 	trailerUploadRoute    = "PUT /api/v1/movies/:id/trailer"
 	webTrailerUploadRoute = "POST /movies/:id/trailer"
@@ -164,7 +165,7 @@ func newRouter(deps Deps) http.Handler {
 
 		webAuthHandler := webhandler.NewAuthHandler(authService, renderer, deps.CookieSecure)
 		webRoutes := router.Group("")
-		webRoutes.Use(webSecurityHeaders(), webhandler.CSRF(deps.CookieSecure, renderer),
+		webRoutes.Use(webSecurityHeaders(), webhandler.CSRF(deps.CookieSecure, renderer, webTrailerUploadRoute),
 			webhandler.OptionalAuth(deps.Tokens, deps.Users, deps.CookieSecure))
 		webRoutes.GET("/catalog", catalogHandler.Catalog)
 		webRoutes.GET("/web/movies", catalogHandler.Movies)

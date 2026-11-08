@@ -62,7 +62,15 @@ func OptionalAuth(tokens *auth.TokenManager, users repository.UserRepository, se
 	}
 }
 
-func CSRF(secure bool, renderer *Renderer) gin.HandlerFunc {
+// CSRF checks the Origin and the CSRF token on state-changing requests. The
+// headerOnlyRoutes, given as "METHOD /full/:path" (c.FullPath), accept the
+// token only from the X-CSRF-Token header, so a rejected request is never
+// read; the large trailer upload uses this.
+func CSRF(secure bool, renderer *Renderer, headerOnlyRoutes ...string) gin.HandlerFunc {
+	headerOnly := make(map[string]bool, len(headerOnlyRoutes))
+	for _, route := range headerOnlyRoutes {
+		headerOnly[route] = true
+	}
 	return func(c *gin.Context) {
 		token, err := c.Cookie(csrfTokenCookie)
 		if err != nil || token == "" {
@@ -80,7 +88,8 @@ func CSRF(secure bool, renderer *Renderer) gin.HandlerFunc {
 		}
 		c.Set(csrfContextKey, token)
 
-		if changesState(c.Request.Method) && !validCSRFRequest(c, token) {
+		allowFormToken := !headerOnly[c.Request.Method+" "+c.FullPath()]
+		if changesState(c.Request.Method) && !validCSRFRequest(c, token, allowFormToken) {
 			if isHTMX(c) {
 				c.AbortWithStatus(http.StatusForbidden)
 				return
@@ -167,14 +176,14 @@ func changesState(method string) bool {
 	}
 }
 
-func validCSRFRequest(c *gin.Context, cookieToken string) bool {
+func validCSRFRequest(c *gin.Context, cookieToken string, allowFormToken bool) bool {
 	origin := c.GetHeader("Origin")
 	parsed, err := url.Parse(origin)
 	if origin == "" || err != nil || parsed.Host == "" || !strings.EqualFold(parsed.Host, c.Request.Host) {
 		return false
 	}
 	submitted := c.GetHeader("X-CSRF-Token")
-	if submitted == "" {
+	if submitted == "" && allowFormToken {
 		if err := c.Request.ParseForm(); err != nil {
 			return false
 		}

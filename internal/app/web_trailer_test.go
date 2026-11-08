@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -443,5 +444,77 @@ func TestWebTrailer_NoUIWhenDisabled(t *testing.T) {
 	apiOnly.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/movies/1/trailer", nil))
 	if !strings.Contains(response.Body.String(), "trailer_unavailable") {
 		t.Errorf("API only: trailer metadata = %s, want the API's trailer_unavailable", response.Body)
+	}
+}
+
+// guardedBody fails the test if more than limit bytes are read from it.
+type guardedBody struct {
+	t     *testing.T
+	limit int64
+	read  int64
+	left  int64
+}
+
+func newGuardedBody(t *testing.T, limit, size int64) *guardedBody {
+	return &guardedBody{t: t, limit: limit, left: size}
+}
+
+func (body *guardedBody) Read(p []byte) (int, error) {
+	if body.left == 0 {
+		return 0, io.EOF
+	}
+	n := int64(len(p))
+	n = min(n, body.left)
+	body.read += n
+	body.left -= n
+	if body.read > body.limit {
+		body.t.Errorf("request body read %d bytes, want at most %d", body.read, body.limit)
+		return 0, errors.New("guardedBody: read past the limit")
+	}
+	for i := range p[:n] {
+		p[i] = 'a'
+	}
+	return int(n), nil
+}
+
+func TestWebTrailer_UploadRejectsBeforeReadingBody(t *testing.T) {
+	env := newWebTrailerEnv(t)
+	id := env.createMovie(t, "Guarded")
+	viewer := mustRoleToken(t, env.users, env.tokens, model.RoleViewer)
+	const large = 100 << 20
+	const smallAmount = 4 << 10
+
+	for _, test := range []struct {
+		name, contentType, origin, csrf, token string
+		formToken                              bool
+		wantStatus                             int
+		wantRedirect                           string
+	}{
+		{name: "no header, form body", contentType: "application/x-www-form-urlencoded", origin: "http://example.com", token: env.editor, formToken: true, wantStatus: http.StatusForbidden},
+		{name: "no header, multipart body", contentType: "multipart/form-data; boundary=x", origin: "http://example.com", token: env.editor, wantStatus: http.StatusForbidden},
+		{name: "no origin", contentType: "multipart/form-data; boundary=x", csrf: env.csrfToken, token: env.editor, wantStatus: http.StatusForbidden},
+		{name: "anonymous", contentType: "multipart/form-data; boundary=x", origin: "http://example.com", csrf: env.csrfToken, wantStatus: http.StatusUnauthorized, wantRedirect: "/login"},
+		{name: "viewer", contentType: "multipart/form-data; boundary=x", origin: "http://example.com", csrf: env.csrfToken, token: viewer, wantStatus: http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var body io.Reader = newGuardedBody(t, smallAmount, large)
+			if test.formToken {
+				// A valid token in a form field is not accepted on this route.
+				body = io.MultiReader(strings.NewReader("csrf_token="+env.csrfToken+"&x="), body)
+			}
+			response := env.htmx(http.MethodPost, "/movies/"+id+"/trailer", body, test.contentType, test.origin, test.csrf, test.token)
+			if response.Code != test.wantStatus {
+				t.Errorf("status = %d, want %d: %s", response.Code, test.wantStatus, response.Body)
+			}
+			if got := response.Header().Get("HX-Redirect"); got != test.wantRedirect {
+				t.Errorf("HX-Redirect = %q, want %q", got, test.wantRedirect)
+			}
+		})
+	}
+	if env.trailers.Len() != 0 || env.storage.Len() != 0 {
+		t.Errorf("rejected uploads stored %d rows and %d objects", env.trailers.Len(), env.storage.Len())
+	}
+	if response := env.upload(t, id, mp4Bytes(1000), "http://example.com", env.csrfToken, env.editor); response.Code != http.StatusOK {
+		t.Errorf("HTMX upload = %d, want 200: %s", response.Code, response.Body)
 	}
 }
