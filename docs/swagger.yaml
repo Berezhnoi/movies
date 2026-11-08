@@ -109,6 +109,21 @@ definitions:
       token_type:
         type: string
     type: object
+  model.Trailer:
+    properties:
+      content_type:
+        example: video/mp4
+        type: string
+      movie_id:
+        example: 1
+        type: integer
+      size_bytes:
+        example: 1048576
+        type: integer
+      uploaded_at:
+        example: "2026-10-05T12:00:00.123456Z"
+        type: string
+    type: object
   model.UpdateRoleRequest:
     properties:
       role:
@@ -460,6 +475,193 @@ paths:
       summary: Replace a movie
       tags:
       - movies
+  /movies/{id}/trailer:
+    delete:
+      description: Removes the trailer. A trailer whose video is already missing from
+        storage is still removed.
+      parameters:
+      - description: Movie ID
+        in: path
+        maximum: 4294967295
+        minimum: 0
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Trailer deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "503":
+          description: Storage unavailable; the trailer is kept
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a movie trailer
+      tags:
+      - trailers
+    get:
+      description: Returns the trailer metadata after checking that the video still
+        exists in storage.
+      parameters:
+      - description: Movie ID
+        in: path
+        maximum: 4294967295
+        minimum: 0
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Trailer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "404":
+          description: not_found or trailer_unavailable
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+      summary: Get a movie trailer's metadata
+      tags:
+      - trailers
+    put:
+      consumes:
+      - multipart/form-data
+      description: Stores one MP4 trailer (at most 50 MiB) for the movie. The file
+        type is checked by its MP4 signature, not by the Content-Type header.
+      parameters:
+      - description: Movie ID
+        in: path
+        maximum: 4294967295
+        minimum: 0
+        name: id
+        required: true
+        type: integer
+      - description: MP4 video
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Trailer replaced
+          schema:
+            $ref: '#/definitions/model.Trailer'
+        "201":
+          description: Trailer created
+          schema:
+            $ref: '#/definitions/model.Trailer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload or replace a movie trailer
+      tags:
+      - trailers
+  /movies/{id}/trailer/video:
+    get:
+      description: Streams the MP4 video. A single "bytes=" Range returns 206; a multi-range
+        or malformed Range returns the whole file.
+      parameters:
+      - description: Movie ID
+        in: path
+        maximum: 4294967295
+        minimum: 0
+        name: id
+        required: true
+        type: integer
+      - description: Single byte range, for example bytes=0-1023
+        in: header
+        name: Range
+        type: string
+      produces:
+      - video/mp4
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "206":
+          description: Partial Content
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "404":
+          description: not_found or trailer_unavailable
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "416":
+          description: Requested Range Not Satisfiable
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/model.ErrorResponse'
+      summary: Stream a movie trailer
+      tags:
+      - trailers
   /users:
     get:
       consumes:

@@ -502,6 +502,281 @@
                 }
             }
         },
+        "/movies/{id}/trailer": {
+            "get": {
+                "description": "Returns the trailer metadata after checking that the video still exists in storage.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "trailers"
+                ],
+                "summary": "Get a movie trailer's metadata",
+                "parameters": [
+                    {
+                        "maximum": 4294967295,
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Movie ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Trailer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found or trailer_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stores one MP4 trailer (at most 50 MiB) for the movie. The file type is checked by its MP4 signature, not by the Content-Type header.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "trailers"
+                ],
+                "summary": "Upload or replace a movie trailer",
+                "parameters": [
+                    {
+                        "maximum": 4294967295,
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Movie ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "MP4 video",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Trailer replaced",
+                        "schema": {
+                            "$ref": "#/definitions/model.Trailer"
+                        }
+                    },
+                    "201": {
+                        "description": "Trailer created",
+                        "schema": {
+                            "$ref": "#/definitions/model.Trailer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the trailer. A trailer whose video is already missing from storage is still removed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "trailers"
+                ],
+                "summary": "Delete a movie trailer",
+                "parameters": [
+                    {
+                        "maximum": 4294967295,
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Movie ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Trailer deleted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Storage unavailable; the trailer is kept",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/movies/{id}/trailer/video": {
+            "get": {
+                "description": "Streams the MP4 video. A single \"bytes=\" Range returns 206; a multi-range or malformed Range returns the whole file.",
+                "produces": [
+                    "video/mp4"
+                ],
+                "tags": [
+                    "trailers"
+                ],
+                "summary": "Stream a movie trailer",
+                "parameters": [
+                    {
+                        "maximum": 4294967295,
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Movie ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Single byte range, for example bytes=0-1023",
+                        "name": "Range",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "206": {
+                        "description": "Partial Content",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found or trailer_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "416": {
+                        "description": "Requested Range Not Satisfiable",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "security": [
@@ -810,6 +1085,27 @@
                 },
                 "token_type": {
                     "type": "string"
+                }
+            }
+        },
+        "model.Trailer": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string",
+                    "example": "video/mp4"
+                },
+                "movie_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "size_bytes": {
+                    "type": "integer",
+                    "example": 1048576
+                },
+                "uploaded_at": {
+                    "type": "string",
+                    "example": "2026-10-05T12:00:00.123456Z"
                 }
             }
         },
