@@ -14,6 +14,8 @@ type TrailerRepository interface {
 	Upsert(ctx context.Context, trailer model.Trailer) (bool, error)
 	// Delete removes the movie's trailer; a missing row is not an error.
 	Delete(ctx context.Context, movieID uint32) error
+	// ExistsFor reports which of the given movies have a trailer row.
+	ExistsFor(ctx context.Context, movieIDs []uint32) (map[uint32]bool, error)
 }
 
 type InMemoryTrailerRepository struct {
@@ -59,6 +61,21 @@ func (repository *InMemoryTrailerRepository) Delete(ctx context.Context, movieID
 	defer repository.mu.Unlock()
 	delete(repository.items, movieID)
 	return nil
+}
+
+func (repository *InMemoryTrailerRepository) ExistsFor(ctx context.Context, movieIDs []uint32) (map[uint32]bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	repository.mu.RLock()
+	defer repository.mu.RUnlock()
+	exists := make(map[uint32]bool, len(movieIDs))
+	for _, movieID := range movieIDs {
+		if _, ok := repository.items[movieID]; ok {
+			exists[movieID] = true
+		}
+	}
+	return exists, nil
 }
 
 // Len returns the number of stored rows.

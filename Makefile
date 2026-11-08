@@ -55,7 +55,7 @@ test-db:
 	@docker compose run --rm migrate -path=/migrations -database "$$TEST_DATABASE_DOCKER_URL" up
 
 test-integration: test-db
-	@go test -race ./internal/repository -run '^(TestGormRepositoryIntegration|TestGormUserRepositoryIntegration|TestGormMovieSearchIntegration)$$' -v
+	@go test -race ./internal/repository -run '^(TestGormRepositoryIntegration|TestGormUserRepositoryIntegration|TestGormMovieSearchIntegration|TestGormTrailerRepositoryIntegration)$$' -v
 
 swagger:
 	go run github.com/swaggo/swag/cmd/swag@v1.16.4 init -g main.go -d cmd/api,internal/handler,internal/model
