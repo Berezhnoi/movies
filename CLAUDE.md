@@ -11,9 +11,9 @@ Go (module `homework`, Gin + GORM + PostgreSQL) movie catalog: JSON API with JWT
 `make` includes and exports `.env` (copy from `.env.example` first), so most targets fail without it.
 
 ```sh
-VARIANT=movies go test -race -count=1 ./...          # full suite; in-memory, no DB needed (what CI runs)
-VARIANT=movies go test -race -count=1 ./internal/app -run TestStage3 # single test / group
-make test                                            # same (Makefile defaults VARIANT=movies), unsets TEST_DATABASE_URL
+go test -race -count=1 ./...                         # full suite; in-memory, no DB needed (what CI runs)
+go test -race -count=1 ./internal/app -run TestStage3 # single test / group
+make test                                            # same, unsets TEST_DATABASE_URL
 make test-integration                                # Postgres repository tests; needs TEST_DB_NAME ending in _test
 go vet ./...
 make fmt                                             # gofmt -w
@@ -28,7 +28,7 @@ make migrate-create name=add_foo                     # new sequential up/down mi
 ## Grading constraints (do not break)
 
 - `internal/app/stage*_test.go`, `helpers_test.go`, `variants_test.go`, `scripts/score.py`, and `.github/workflows/ci.yml` are official files checksummed in `.github/tests.sha256`. Never edit them; change the implementation instead.
-- These tests select expected behavior from the `VARIANT` env var (`movies`). There is no `VARIANT` file; CI sets the env var, and `.github/tests.sha256` was regenerated after that ci.yml change. Regenerate it with `sha256sum` if any official file changes.
+- Regenerate `.github/tests.sha256` with `sha256sum` if any official file changes.
 - CI fails on any of: gofmt, `go vet`, or `go test -race` with a 180s timeout.
 
 ## Architecture

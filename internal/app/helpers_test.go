@@ -22,7 +22,7 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 
-	v := mustVariant(t)
+	v := moviesVariant
 	h := app.NewRouter()
 	if h == nil {
 		t.Fatal("app.NewRouter() returned nil")

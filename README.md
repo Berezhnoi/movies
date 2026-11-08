@@ -133,16 +133,13 @@ infra/                VM, Terraform, Floci and K3s deployment
 ## Development
 
 ```sh
-VARIANT=movies go test -race -count=1 ./...   # no database needed
+go test -race -count=1 ./...                  # no database needed
 make test-integration                        # PostgreSQL repository tests (needs a *_test DB)
 TEST_REDIS_URL=redis://127.0.0.1:6379 go test -race ./internal/app -run Redis   # chat over Redis
 go vet ./... && make fmt
 make swagger                                 # regenerate docs/ after changing handler annotations
 make verify-isolation                        # build the binary and run it from an empty directory
 ```
-
-`VARIANT` selects the expected behavior for the course contract tests in `internal/app`. CI sets it to
-`movies`.
 
 ## Deployment
 

@@ -8,7 +8,7 @@ import (
 // Stage 2: validation and error handling.
 
 func TestStage2_MissingRequiredFieldReturns422(t *testing.T) {
-	v := mustVariant(t)
+	v := moviesVariant
 
 	for _, field := range v.Required {
 		field := field
@@ -23,7 +23,7 @@ func TestStage2_MissingRequiredFieldReturns422(t *testing.T) {
 }
 
 func TestStage2_EmptyRequiredFieldReturns422(t *testing.T) {
-	v := mustVariant(t)
+	v := moviesVariant
 
 	for _, field := range v.Required {
 		field := field

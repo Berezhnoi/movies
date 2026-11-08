@@ -1,8 +1,6 @@
 include .env
 export
 
-VARIANT ?= movies
-
 .PHONY: build verify-isolation db-up db-down db-logs migrate-up migrate-down migrate-create migrate-version migrate-force run run-api-only seed-admin test test-db test-integration swagger fmt vet
 
 build:
