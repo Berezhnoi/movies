@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Stage 1: skeleton, create and get a single resource.
+// Health, 404, create and get a single movie.
 
 func TestStage1_Health(t *testing.T) {
 	e := newEnv(t)
@@ -42,7 +42,7 @@ func TestStage1_CreateReturns201AndStoredObject(t *testing.T) {
 	if id := idOf(t, obj); id != 1 {
 		t.Errorf("the first created resource must have id 1, got %d", id)
 	}
-	for _, f := range e.v.Required {
+	for _, f := range movieRequiredFields {
 		if obj[f] != body[f] {
 			t.Errorf("field %q: expected %v, got %v", f, body[f], obj[f])
 		}
@@ -53,15 +53,15 @@ func TestStage1_CreateReturns201AndStoredObject(t *testing.T) {
 
 func TestStage1_OptionalFieldsAreAcceptedAndEchoed(t *testing.T) {
 	e := newEnv(t)
-	body := with(with(e.valid(), e.v.OptInt, 2015), e.v.OptText, "some text")
+	body := with(with(e.valid(), "release_year", 2015), "synopsis", "some text")
 
 	obj := e.create(body)
 
-	if obj[e.v.OptInt] != float64(2015) {
-		t.Errorf("field %q: expected 2015, got %v", e.v.OptInt, obj[e.v.OptInt])
+	if obj["release_year"] != float64(2015) {
+		t.Errorf("field %q: expected 2015, got %v", "release_year", obj["release_year"])
 	}
-	if obj[e.v.OptText] != "some text" {
-		t.Errorf("field %q: expected %q, got %v", e.v.OptText, "some text", obj[e.v.OptText])
+	if obj["synopsis"] != "some text" {
+		t.Errorf("field %q: expected %q, got %v", "synopsis", "some text", obj["synopsis"])
 	}
 }
 
@@ -70,7 +70,7 @@ func TestStage1_OptionalFieldsAreNullWhenOmitted(t *testing.T) {
 
 	obj := e.create(e.valid())
 
-	for _, f := range []string{e.v.OptInt, e.v.OptText} {
+	for _, f := range []string{"release_year", "synopsis"} {
 		val, present := obj[f]
 		if !present {
 			t.Errorf("field %q must be present in the response (as null) when it was not provided", f)
@@ -92,7 +92,7 @@ func TestStage1_GetByIDReturnsCreatedResource(t *testing.T) {
 	if got := idOf(t, obj); got != id {
 		t.Errorf("expected id %d, got %d", id, got)
 	}
-	for _, f := range e.v.Required {
+	for _, f := range movieRequiredFields {
 		if obj[f] != body[f] {
 			t.Errorf("field %q: expected %v, got %v", f, body[f], obj[f])
 		}

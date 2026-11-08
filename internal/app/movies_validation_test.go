@@ -5,12 +5,10 @@ import (
 	"testing"
 )
 
-// Stage 2: validation and error handling.
+// Movie validation and error handling.
 
 func TestStage2_MissingRequiredFieldReturns422(t *testing.T) {
-	v := moviesVariant
-
-	for _, field := range v.Required {
+	for _, field := range movieRequiredFields {
 		field := field
 		t.Run(field, func(t *testing.T) {
 			e := newEnv(t)
@@ -23,9 +21,7 @@ func TestStage2_MissingRequiredFieldReturns422(t *testing.T) {
 }
 
 func TestStage2_EmptyRequiredFieldReturns422(t *testing.T) {
-	v := moviesVariant
-
-	for _, field := range v.Required {
+	for _, field := range movieRequiredFields {
 		field := field
 		t.Run(field, func(t *testing.T) {
 			e := newEnv(t)
