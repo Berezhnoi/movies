@@ -1,4 +1,5 @@
 # Plan: Movie trailers (Floci S3)
+Tracking issue: #16
 PRD: docs/prd/movie-trailers.md   Status: approved   Date: 2026-11-08
 
 ## 1. Summary
@@ -99,7 +100,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   - with `NewRouter()`, `/api/v1/movies/1/trailer` → 404
 - Verify: `go test -race -count=1 ./internal/app -run Trailer` passes, and the full suite stays green.
 
-### T3: Replace, delete, lost object, storage down, movie-delete cleanup   (covers FR-2, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12)   depends on: T2
+### T3: Replace, delete, lost object, storage down, movie-delete cleanup (#8)   (covers FR-2, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12)   depends on: T2
 - Goal: complete the lifecycle and failure behaviour using the fake's fault switches (drop object, drop bucket, unavailable).
 - Files:
   - `internal/service/trailer_service.go`, `internal/service/movie.go` (D8)
@@ -120,7 +121,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   - a service unit test where the repo fails after the put → 500
 - Verify: `go test -race -count=1 ./internal/app ./internal/service -run 'Trailer|Movie'` passes.
 
-### T4: GORM trailer repository   (covers FR-1, FR-2, FR-9, FR-10)   depends on: T2   parallel with: T3
+### T4: GORM trailer repository (#9)   (covers FR-1, FR-2, FR-9, FR-10)   depends on: T2   parallel with: T3
 - Goal: a GORM repository that behaves like the in-memory one.
 - Files: `internal/repository/trailer_gorm.go`, `internal/repository/trailer_gorm_test.go`, and an addition to `integration_test.go`.
 - Steps:
@@ -129,7 +130,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 - Tests: a shared behaviour table run against both implementations. Against Postgres (`TEST_DATABASE_URL`): the cascade on movie delete.
 - Verify: `go test -race ./...` is green, and `make test-integration` passes against `_test` DB.
 
-### T5: S3 storage, config and real-AWS guard   (covers FR-11, FR-12, FR-13, NFR security)   depends on: T1, T2   parallel with: T3, T4
+### T5: S3 storage, config and real-AWS guard (#10)   (covers FR-11, FR-12, FR-13, NFR security)   depends on: T1, T2   parallel with: T3, T4
 - Goal: a real implementation of `TrailerStorage`, wired in `cmd/api` when `TRAILERS_ENABLED=true`.
 - Files: `go.mod`/`go.sum`, `internal/storage/s3.go`, `internal/storage/s3_floci_test.go`, `internal/config/config.go`, `internal/config/config_test.go`, `cmd/api/main.go`.
 - Steps:
@@ -149,7 +150,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   4. Stop Floci. The trailer endpoints → 503 and `/api/v1/movies` → 200.
   5. Start the app with `S3_ENDPOINT_URL=https://s3.amazonaws.com` → it refuses to start.
 
-### T6: Compose and K3s wiring   (covers FR-12, PRD §7 Floci location)   depends on: T5
+### T6: Compose and K3s wiring (#11)   (covers FR-12, PRD §7 Floci location)   depends on: T5
 - Goal: the app reaches Floci in both environments.
 - Files: `docker-compose.floci.yml` (new), `infra/k8s/config.yaml`, `infra/README.md`, and `infra/k3s-smoke.sh` if a smoke check fits there.
 - Steps:
@@ -158,7 +159,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 - Tests: manual smoke. Upload a small MP4 via curl, stream it with a Range, restart Floci, and check that the response is 404 `trailer_unavailable`.
 - Verify: `make -C infra floci-up && docker compose -f docker-compose.yml -f docker-compose.floci.yml up -d --build`, then `curl -I .../api/v1/movies/1/trailer/video` returns 200. In K3s, `kubectl -n movies rollout status deploy/...` succeeds and the same curl through Traefik returns 200.
 
-### T7: Web UI — edit form section, catalog link, watch page   (covers FR-7 UI, FR-14)   depends on: T3, T4
+### T7: Web UI — edit form section, catalog link, watch page (#12)   (covers FR-7 UI, FR-14)   depends on: T3, T4
 - Goal: the minimal web UI under the existing CSP and CSRF rules.
 - Files:
   - `internal/handler/web/trailer.go`, `internal/handler/web/catalog.go`, `internal/handler/web/viewmodel.go`
@@ -177,7 +178,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   - `audit_test.go` still passes
 - Verify: `go test -race -count=1 ./internal/app ./internal/handler/web` passes. A manual check in the browser via `make run` with Floci shows no CSP console errors and seeking works.
 
-### T8: Docs — README, .env.example, Swagger   (covers DoD)   depends on: T5, T6, T7
+### T8: Docs — README, .env.example, Swagger (#13)   (covers DoD)   depends on: T5, T6, T7
 - Files: `README.md`, `.env.example` (new), `docs/` (generated), and the handler swag annotations.
 - Steps:
   1. Fix README.md:57 to say the catalog is public.
@@ -186,14 +187,14 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   4. Run `make swagger`.
 - Verify: `make swagger` produces a clean diff limited to the trailer paths. `go test -race ./...` passes.
 
-### T9: Full verification   (covers all NFR compatibility)   depends on: T8
+### T9: Full verification (#14)   (covers all NFR compatibility)   depends on: T8
 - Steps:
   1. Run `gofmt -l .` (empty), `go vet ./...`, and `go test -race -timeout 180s ./...` outside the sandbox.
   2. Run `make build && make verify-isolation`.
   3. Run the Floci-gated tests with `TEST_S3_ENDPOINT`.
 - Verify: all of the above are green.
 
-### T10: Review with go-review-best-practices   depends on: T9
+### T10: Review with go-review-best-practices (#15)   depends on: T9
 - Steps:
   1. Run the `go-review-best-practices` skill on the branch diff, with attention to layering, ctx propagation, temp-file cleanup, closing S3 response bodies, error mapping, and that no AWS creds reach the logs.
   2. Fix the findings and re-run T9.
@@ -202,29 +203,29 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 ## 6. Traceability
 | Requirement | Task(s) | Test(s) |
 |---|---|---|
-| FR-1 upload | T2, T4 | trailer_test upload 201; trailer_gorm_test |
-| FR-2 replace / atomic | T3, T4 | trailer_test replace; trailer_service_test DB-fail → 500 |
+| FR-1 upload | T2, T4 (#9) | trailer_test upload 201; trailer_gorm_test |
+| FR-2 replace / atomic | T3 (#8), T4 (#9) | trailer_test replace; trailer_service_test DB-fail → 500 |
 | FR-3 validation + precedence (N-4) | T2 | trailer_test 413/415/422/404/400 and 401/403 → 400 → 404 → body table |
 | FR-4 auth | T2 | trailer_test 401/403/editor/admin, public reads |
-| FR-5 metadata + HEAD | T2, T3 | trailer_test metadata; dropped object → 404 |
-| FR-6 stream/range/headers | T1, T2, T5 | trailer_test 200/206/416/multi-range; s3_floci_test range |
-| FR-7 lost object / bucket | T1, T3, T7 | trailer_test drop object/bucket; web_trailer_test unavailable |
-| FR-8 stale cleanup | T3 | trailer_test delete 204 with missing object, re-upload |
-| FR-9 delete | T3, T4 | trailer_test delete 204 → 404 |
-| FR-10 movie delete | T3, T4 | trailer_test admin delete; integration cascade |
-| FR-11 bucket recovery | T3, T5 | trailer_test fake CreateBucket; s3_floci_test auto-create |
-| FR-12 storage down (incl. delete) | T3, T5, T6 | trailer_test unavailable → 503 for upload, metadata, stream and delete with the row kept, movies unaffected; T5 manual check |
-| FR-13 real-AWS guard (only when enabled) | T5 | config_test: disabled + empty → OK, enabled guard cases; T5 manual check |
-| FR-14 web UI | T7 | web_trailer_test |
-| NFR compatibility (Movie contract, NewRouter, existing tests) | T2, T9 | existing movie tests pass unchanged; NewRouter trailer 404 test |
-| NFR body cap: 1 MiB elsewhere, 50 MiB on API + web upload routes | T2, T7 | 413 tests; new test that `/api/v1/movies` POST > 1 MiB → 413; web upload test |
-| NFR CSRF/Origin on the web upload | T7 | web_trailer_test without token or Origin → 403 |
-| NFR timeouts do not cut uploads or streams | T5, T9 | main.go keeps only `ReadHeaderTimeout` (review); T5 manual check uploads and streams a near-50 MiB file |
-| NFR security: dummy creds, keys from movie id, CSP `'self'`, nosniff, error JSON | T2, T5, T7 | header asserts; object key assert in fake; config_test; CSP assert; error-shape asserts |
-| NFR testability: no Floci in CI, opt-in Floci tests | T5, T9 | `go test -race ./...` without Floci; `TEST_S3_ENDPOINT` skip |
-| NFR performance: no full-file buffering | T2, T10 | temp-file upload and `io.Copy` stream; review checklist |
-| NFR observability: logs for upload, delete, lost object and storage errors | T3 | log capture (`log.SetOutput` to a buffer) asserts movie id in the lost-object and storage-error logs |
-| NFR simplicity: one bucket, one object per movie, no background jobs | T2, T10 | fixed-key assert; review |
+| FR-5 metadata + HEAD | T2, T3 (#8) | trailer_test metadata; dropped object → 404 |
+| FR-6 stream/range/headers | T1, T2, T5 (#10) | trailer_test 200/206/416/multi-range; s3_floci_test range |
+| FR-7 lost object / bucket | T1, T3 (#8), T7 (#12) | trailer_test drop object/bucket; web_trailer_test unavailable |
+| FR-8 stale cleanup | T3 (#8) | trailer_test delete 204 with missing object, re-upload |
+| FR-9 delete | T3 (#8), T4 (#9) | trailer_test delete 204 → 404 |
+| FR-10 movie delete | T3 (#8), T4 (#9) | trailer_test admin delete; integration cascade |
+| FR-11 bucket recovery | T3 (#8), T5 (#10) | trailer_test fake CreateBucket; s3_floci_test auto-create |
+| FR-12 storage down (incl. delete) | T3 (#8), T5 (#10), T6 (#11) | trailer_test unavailable → 503 for upload, metadata, stream and delete with the row kept, movies unaffected; T5 manual check |
+| FR-13 real-AWS guard (only when enabled) | T5 (#10) | config_test: disabled + empty → OK, enabled guard cases; T5 manual check |
+| FR-14 web UI | T7 (#12) | web_trailer_test |
+| NFR compatibility (Movie contract, NewRouter, existing tests) | T2, T9 (#14) | existing movie tests pass unchanged; NewRouter trailer 404 test |
+| NFR body cap: 1 MiB elsewhere, 50 MiB on API + web upload routes | T2, T7 (#12) | 413 tests; new test that `/api/v1/movies` POST > 1 MiB → 413; web upload test |
+| NFR CSRF/Origin on the web upload | T7 (#12) | web_trailer_test without token or Origin → 403 |
+| NFR timeouts do not cut uploads or streams | T5 (#10), T9 (#14) | main.go keeps only `ReadHeaderTimeout` (review); T5 manual check uploads and streams a near-50 MiB file |
+| NFR security: dummy creds, keys from movie id, CSP `'self'`, nosniff, error JSON | T2, T5 (#10), T7 (#12) | header asserts; object key assert in fake; config_test; CSP assert; error-shape asserts |
+| NFR testability: no Floci in CI, opt-in Floci tests | T5 (#10), T9 (#14) | `go test -race ./...` without Floci; `TEST_S3_ENDPOINT` skip |
+| NFR performance: no full-file buffering | T2, T10 (#15) | temp-file upload and `io.Copy` stream; review checklist |
+| NFR observability: logs for upload, delete, lost object and storage errors | T3 (#8) | log capture (`log.SetOutput` to a buffer) asserts movie id in the lost-object and storage-error logs |
+| NFR simplicity: one bucket, one object per movie, no background jobs | T2, T10 (#15) | fixed-key assert; review |
 
 ## 7. Risks and rollback
 - **Floci gaps (Range, error codes):** found in T1. The fallbacks are noted in `floci-notes.md`, and the PRD is amended before T2.
@@ -237,8 +238,8 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 ## 8. Needs decision
 - **N-1 (resolved by T1): Go version.** CI uses Go 1.22 (ci.yml line 15), and the current AWS SDK v2 needs Go ≥ 1.23. T5 pins `aws-sdk-go-v2 v1.39.2`, `service/s3 v1.88.4`, `credentials v1.18.16` and `smithy-go v1.23.0`, all of which declare `go 1.22` and passed the T1 checks (see `docs/floci-notes.md`). The `go` directive in `go.mod` becomes 1.22.
 - **N-4 (resolved):** the precedence is 401/403 → 400 → 404 → 413/415/422, using the existing staff group with no separate route group (D6).
-- **N-2: Web upload without JavaScript.** The CSRF check reads the token from the header or from `ParseForm`, which does not parse multipart bodies. So the upload works only through HTMX, which adds the header. Recommended: accept that the upload requires HTMX, as the rest of the UI already does.
-- **N-3: The response to a web trailer delete.** Recommended: return the refreshed trailer-section fragment with 200, instead of the empty 200 used by movie row deletes, so the upload control reappears.
+- **N-2 (resolved): Web upload without JavaScript.** The CSRF check reads the token from the header or from `ParseForm`, which does not parse multipart bodies. Decision: the web upload works only through HTMX (which adds the `X-CSRF-Token` header), as the rest of the UI already does. No no-JS fallback.
+- **N-3 (resolved): The response to a web trailer delete.** Decision: return the refreshed trailer-section fragment with 200, instead of the empty 200 used by movie row deletes, so the upload control reappears.
 
 ## 9. Definition of done
 - [ ] T1 findings are recorded in `docs/floci-notes.md`, and the PRD is amended if needed
