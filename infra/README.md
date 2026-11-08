@@ -41,6 +41,33 @@ vagrant ssh -- -L 30080:localhost:30080   # keep open
 Open `http://localhost:30080/login` and log in as `admin@movies.local`. The password is in the VM:
 `grep ^ADMIN_PASSWORD= ~/movies/infra/secrets.env | cut -d= -f2-`
 
+## 6. Trailers on Floci S3
+
+Docker Compose (repo root; the default `docker-compose.yml` still works on its own):
+
+```sh
+make -C infra floci-up
+docker compose -f docker-compose.yml -f docker-compose.floci.yml up -d --build   # add --profile scale for app1/app2
+```
+
+The override joins `backend`, `app1` and `app2` to the external `floci` network and sets
+`TRAILERS_ENABLED=true`, `S3_ENDPOINT_URL=http://floci:4566`, `S3_BUCKET=trailers` and dummy `AWS_*` keys.
+The `migrate` service applies `000004_add_movie_trailers` like every other migration.
+
+K3s: the same settings are in `k8s/config.yaml`. Pods resolve `floci` through the CoreDNS `floci` zone
+(`make -C infra k8s-dns`) to the node IP, where Floci publishes 4566. `make -C infra k8s-apply` ships
+`000004` in the `movies-migrations` ConfigMap. Smoke check (VM, editor or admin token in `$TOKEN`):
+
+```sh
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -F "file=@small.mp4;type=video/mp4" \
+  http://localhost:30080/api/v1/movies/1/trailer                                    # 201 or 200
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-99' \
+  http://localhost:30080/api/v1/movies/1/trailer/video                              # 206
+```
+
+Floci keeps S3 data in memory: after a Floci restart the stream returns 404 `trailer_unavailable` until an
+editor uploads the file again. See `docs/floci-notes.md`.
+
 ## Teardown
 
 ```sh

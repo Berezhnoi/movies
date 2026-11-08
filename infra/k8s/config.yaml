@@ -17,3 +17,11 @@ data:
   ADMIN_EMAIL: admin@movies.local
   # First Lambda invoke pulls the runtime image (~25s cold start on Floci).
   WEBHOOK_TIMEOUT: 60s
+  # Trailers on Floci (outside the cluster). The CoreDNS floci zone (k8s-dns) resolves
+  # `floci` to the node IP, where Floci publishes 4566. Dummy keys; Floci ignores them.
+  TRAILERS_ENABLED: "true"
+  S3_ENDPOINT_URL: http://floci:4566
+  S3_BUCKET: trailers
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test

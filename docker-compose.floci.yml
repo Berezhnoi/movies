@@ -1,0 +1,28 @@
+# Trailers on Floci. Start Floci first, then layer this file on the default stack:
+#   make -C infra floci-up
+#   docker compose -f docker-compose.yml -f docker-compose.floci.yml up -d --build
+# Add `--profile scale` to wire app1/app2 as well. Dummy credentials only; Floci ignores them.
+x-trailers: &trailers
+  TRAILERS_ENABLED: "true"
+  S3_ENDPOINT_URL: http://floci:4566
+  S3_BUCKET: trailers
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+
+services:
+  backend:
+    environment: *trailers
+    networks: [default, floci]
+
+  app1:
+    environment: *trailers
+    networks: [default, floci]
+
+  app2:
+    environment: *trailers
+    networks: [default, floci]
+
+networks:
+  floci:
+    external: true
