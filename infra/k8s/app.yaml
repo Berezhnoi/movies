@@ -47,7 +47,7 @@ spec:
               mountPath: /tmp
       volumes:
         - name: tmp
-          emptyDir: { sizeLimit: 128Mi }
+          emptyDir: { sizeLimit: 512Mi }
 ---
 apiVersion: v1
 kind: Service

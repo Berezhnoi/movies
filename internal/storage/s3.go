@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
@@ -25,6 +27,15 @@ type S3Config struct {
 	SecretAccessKey string
 }
 
+// The connection phases have timeouts so a stalled emulator answers 503
+// promptly; there is no overall timeout, which would cut 50 MiB uploads and
+// long streams.
+const (
+	s3DialTimeout           = 5 * time.Second
+	s3TLSHandshakeTimeout   = 5 * time.Second
+	s3ResponseHeaderTimeout = 5 * time.Second
+)
+
 // S3 is a TrailerStorage backed by one S3 bucket. The client is built from
 // S3Config only (never config.LoadDefaultConfig), so it cannot pick up
 // ~/.aws, IMDS or AWS_ENDPOINT_URL.
@@ -40,11 +51,21 @@ func NewS3(cfg S3Config) *S3 {
 		Region:       cfg.Region,
 		BaseEndpoint: aws.String(cfg.Endpoint),
 		UsePathStyle: true,
+		HTTPClient:   newS3HTTPClient(),
 		Credentials: aws.NewCredentialsCache(
 			credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
 		),
 	})
 	return &S3{client: client, bucket: cfg.Bucket}
+}
+
+func newS3HTTPClient() *awshttp.BuildableClient {
+	return awshttp.NewBuildableClient().
+		WithDialerOptions(func(dialer *net.Dialer) { dialer.Timeout = s3DialTimeout }).
+		WithTransportOptions(func(transport *http.Transport) {
+			transport.TLSHandshakeTimeout = s3TLSHandshakeTimeout
+			transport.ResponseHeaderTimeout = s3ResponseHeaderTimeout
+		})
 }
 
 // EnsureBucket creates the bucket unless it already exists.
@@ -129,11 +150,15 @@ func wrap(op, key string, err error) error {
 
 // mapError follows docs/floci-notes.md: Floci's NoSuchBucket does not match
 // *types.NoSuchBucket, so codes are compared as strings. HEAD has no body, so
-// its 404 arrives as "NotFound". A transport error (no API error) or a 5xx
-// means the storage is unavailable.
+// its 404 arrives as "NotFound". InvalidRange (416) means the object changed
+// size since the HEAD. A transport error (no API error) or a 5xx means the
+// storage is unavailable.
 func mapError(err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
+	}
+	if hasCode(err, "InvalidRange") || statusCode(err) == http.StatusRequestedRangeNotSatisfiable {
+		return fmt.Errorf("%w: %v", service.ErrRangeNotSatisfiable, err)
 	}
 	if hasCode(err, "NoSuchKey", "NoSuchBucket", "NotFound") || statusCode(err) == http.StatusNotFound {
 		return fmt.Errorf("%w: %v", service.ErrObjectNotFound, err)

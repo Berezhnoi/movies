@@ -24,7 +24,13 @@ var (
 	ErrObjectNotFound = errors.New("storage object not found")
 	// ErrStorageUnavailable is returned by a TrailerStorage when the backend cannot be reached.
 	ErrStorageUnavailable = errors.New("trailer storage unavailable")
+	// ErrRangeNotSatisfiable is returned by a TrailerStorage when the range lies
+	// outside the object, for example after a replace shrank it.
+	ErrRangeNotSatisfiable = errors.New("storage range not satisfiable")
 )
+
+// cleanupTimeout bounds best-effort cleanups that outlive the request.
+const cleanupTimeout = 10 * time.Second
 
 // TrailerStorage keeps trailer videos; implementations wrap their errors with
 // ErrObjectNotFound or ErrStorageUnavailable.
@@ -119,6 +125,12 @@ func (service *TrailerService) Upload(ctx context.Context, movieID uint32, file 
 		trailer.UploadedBy = &uploadedBy
 	}
 	created, err := service.trailers.Upsert(ctx, trailer)
+	if errors.Is(err, repository.ErrNotFound) {
+		// The movie was deleted after RequireMovie; drop the object just written.
+		log.Printf("trailer stored but movie gone: movie_id=%d", movieID)
+		service.deleteObjectBestEffort(ctx, movieID, "upload for deleted movie")
+		return model.Trailer{}, false, NotFoundError{Message: "Movie not found"}
+	}
 	if err != nil {
 		log.Printf("trailer stored but metadata not saved: movie_id=%d: %v", movieID, err)
 		return model.Trailer{}, false, fmt.Errorf("trailer repository: %w", err)
@@ -155,6 +167,10 @@ func (service *TrailerService) Open(ctx context.Context, movieID uint32, rangeHe
 		return StoredObject{}, err
 	}
 	object, err := service.storage.Get(ctx, trailer.ObjectKey, byteRange)
+	if errors.Is(err, ErrRangeNotSatisfiable) {
+		// The object changed size between Head and Get.
+		return StoredObject{}, RangeNotSatisfiableError{Size: size}
+	}
 	if err != nil {
 		return StoredObject{}, storageError(movieID, err)
 	}
@@ -189,14 +205,26 @@ func (service *TrailerService) ExistsFor(ctx context.Context, movieIDs []uint32)
 }
 
 // RemoveMovieTrailer cleans up after a movie delete. Failures are only logged,
-// so they never fail the movie delete.
+// so they never fail the movie delete. The cleanup ignores request
+// cancellation, so a client that disconnects right after the delete does not
+// leave an orphaned object.
 func (service *TrailerService) RemoveMovieTrailer(ctx context.Context, movieID uint32) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
 	if err := service.trailers.Delete(ctx, movieID); err != nil {
 		log.Printf("movie deleted but trailer row not removed: movie_id=%d: %v", movieID, err)
 	}
+	service.deleteObjectBestEffort(ctx, movieID, "movie deleted but")
+}
+
+// deleteObjectBestEffort removes the movie's object and only logs a failure.
+// It ignores request cancellation, with its own timeout.
+func (service *TrailerService) deleteObjectBestEffort(ctx context.Context, movieID uint32, reason string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
 	err := service.storage.Delete(ctx, TrailerObjectKey(movieID))
 	if err != nil && !errors.Is(err, ErrObjectNotFound) {
-		log.Printf("movie deleted but trailer object not removed: movie_id=%d: %v", movieID, err)
+		log.Printf("%s trailer object not removed: movie_id=%d: %v", reason, movieID, err)
 	}
 }
 

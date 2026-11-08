@@ -162,6 +162,7 @@ func TestLoadTrailersGuardsS3Endpoint(t *testing.T) {
 		{name: "real AWS host", enabled: "true", endpoint: "https://s3.amazonaws.com", bucket: "trailers", wantErr: "amazonaws.com"},
 		{name: "real AWS regional host", enabled: "true", endpoint: "https://bucket.s3.eu-west-1.amazonaws.com", bucket: "trailers", wantErr: "amazonaws.com"},
 		{name: "real AWS China host", enabled: "true", endpoint: "https://s3.cn-north-1.amazonaws.com.cn", bucket: "trailers", wantErr: "amazonaws.com"},
+		{name: "real AWS dual-stack host", enabled: "true", endpoint: "https://s3.dualstack.us-east-1.api.aws", bucket: "trailers", wantErr: "api.aws"},
 		{name: "upper-case AWS host", enabled: "true", endpoint: "https://S3.AMAZONAWS.COM.", bucket: "trailers", wantErr: "amazonaws.com"},
 		{name: "not http", enabled: "true", endpoint: "ftp://floci:4566", bucket: "trailers", wantErr: "S3_ENDPOINT_URL"},
 		{name: "no host", enabled: "true", endpoint: "http://", bucket: "trailers", wantErr: "S3_ENDPOINT_URL"},

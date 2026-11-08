@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"strings"
@@ -15,7 +16,10 @@ import (
 
 type stubTrailerStorage struct {
 	puts      []string
+	deletes   []string
 	deleteErr error
+	headSize  int64
+	getErr    error
 }
 
 func (storage *stubTrailerStorage) Put(_ context.Context, key string, body io.ReadSeeker, _ int64, _ string) error {
@@ -24,13 +28,27 @@ func (storage *stubTrailerStorage) Put(_ context.Context, key string, body io.Re
 	return err
 }
 
-func (*stubTrailerStorage) Head(context.Context, string) (int64, error) { return 0, ErrObjectNotFound }
+func (storage *stubTrailerStorage) Head(context.Context, string) (int64, error) {
+	if storage.headSize == 0 {
+		return 0, ErrObjectNotFound
+	}
+	return storage.headSize, nil
+}
 
-func (*stubTrailerStorage) Get(context.Context, string, *ByteRange) (StoredObject, error) {
+func (storage *stubTrailerStorage) Get(context.Context, string, *ByteRange) (StoredObject, error) {
+	if storage.getErr != nil {
+		return StoredObject{}, storage.getErr
+	}
 	return StoredObject{}, ErrObjectNotFound
 }
 
-func (storage *stubTrailerStorage) Delete(context.Context, string) error { return storage.deleteErr }
+func (storage *stubTrailerStorage) Delete(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	storage.deletes = append(storage.deletes, key)
+	return storage.deleteErr
+}
 
 type failingTrailerRepository struct {
 	*repository.InMemoryTrailerRepository
@@ -73,6 +91,67 @@ func TestTrailerUploadRepositoryFailsAfterPut(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "movie_id=7") {
 		t.Errorf("log = %q, want the movie id", logs)
+	}
+}
+
+func TestTrailerUploadForDeletedMovieRemovesObject(t *testing.T) {
+	storage := &stubTrailerStorage{}
+	// The GORM repository returns ErrNotFound when the movie was deleted after
+	// RequireMovie (foreign key violation).
+	trailerService := NewTrailerService(repository.NewInMemoryMovieRepositoryAdapter(),
+		failingTrailerRepository{repository.NewInMemoryTrailerRepository(), repository.ErrNotFound}, storage)
+	logs := captureServiceLog(t)
+
+	file := append([]byte{0, 0, 0, 0x18, 'f', 't', 'y', 'p'}, make([]byte, 92)...)
+	_, _, err := trailerService.Upload(context.Background(), 7, bytes.NewReader(file), 1)
+	var notFound NotFoundError
+	if !errors.As(err, &notFound) || notFound.Message != "Movie not found" {
+		t.Fatalf("Upload() error = %v, want NotFoundError(Movie not found)", err)
+	}
+	if len(storage.puts) != 1 || len(storage.deletes) != 1 || storage.deletes[0] != "trailers/7.mp4" {
+		t.Errorf("puts = %v, deletes = %v, want the written trailers/7.mp4 deleted", storage.puts, storage.deletes)
+	}
+
+	storage.deleteErr = ErrStorageUnavailable
+	logs.Reset()
+	_, _, err = trailerService.Upload(context.Background(), 7, bytes.NewReader(file), 1)
+	if !errors.As(err, &notFound) {
+		t.Fatalf("Upload() with a failing cleanup error = %v, want NotFoundError", err)
+	}
+	if !strings.Contains(logs.String(), "trailer object not removed: movie_id=7") {
+		t.Errorf("log = %q, want the failed cleanup logged with movie_id=7", logs)
+	}
+}
+
+func TestTrailerOpenMapsStorageRangeError(t *testing.T) {
+	trailers := repository.NewInMemoryTrailerRepository()
+	if _, err := trailers.Upsert(context.Background(), model.Trailer{MovieID: 3, ObjectKey: TrailerObjectKey(3)}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	// Head saw 1000 bytes, but the object shrank before Get.
+	storage := &stubTrailerStorage{headSize: 1000, getErr: fmt.Errorf("%w: shrunk", ErrRangeNotSatisfiable)}
+	trailerService := NewTrailerService(repository.NewInMemoryMovieRepositoryAdapter(), trailers, storage)
+
+	_, err := trailerService.Open(context.Background(), 3, "bytes=900-999")
+	var rangeError RangeNotSatisfiableError
+	if !errors.As(err, &rangeError) || rangeError.Size != 1000 {
+		t.Fatalf("Open() error = %v, want RangeNotSatisfiableError with size 1000", err)
+	}
+}
+
+func TestTrailerRemoveMovieTrailerIgnoresCanceledRequest(t *testing.T) {
+	trailers := repository.NewInMemoryTrailerRepository()
+	if _, err := trailers.Upsert(context.Background(), model.Trailer{MovieID: 3, ObjectKey: TrailerObjectKey(3)}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	storage := &stubTrailerStorage{}
+	trailerService := NewTrailerService(repository.NewInMemoryMovieRepositoryAdapter(), trailers, storage)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	trailerService.RemoveMovieTrailer(ctx, 3)
+	if trailers.Len() != 0 || len(storage.deletes) != 1 {
+		t.Errorf("rows = %d, deletes = %v, want the cleanup to run despite the canceled request", trailers.Len(), storage.deletes)
 	}
 }
 

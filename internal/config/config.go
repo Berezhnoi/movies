@@ -140,7 +140,7 @@ func loadTrailerStorage(cfg *Config) error {
 		return fmt.Errorf("S3_ENDPOINT_URL must be an http or https URL with a host")
 	}
 	if isAWSHost(endpoint.Hostname()) {
-		return fmt.Errorf("S3_ENDPOINT_URL host %q is under amazonaws.com; trailers only support a local S3 emulator such as Floci", endpoint.Hostname())
+		return fmt.Errorf("S3_ENDPOINT_URL host %q is a real AWS host (amazonaws.com or api.aws); trailers only support a local S3 emulator such as Floci", endpoint.Hostname())
 	}
 	if cfg.S3Bucket, err = required("S3_BUCKET"); err != nil {
 		return fmt.Errorf("TRAILERS_ENABLED=true: %w", err)
@@ -153,7 +153,7 @@ func loadTrailerStorage(cfg *Config) error {
 
 func isAWSHost(host string) bool {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	for _, domain := range []string{"amazonaws.com", "amazonaws.com.cn"} {
+	for _, domain := range []string{"amazonaws.com", "amazonaws.com.cn", "api.aws"} {
 		if host == domain || strings.HasSuffix(host, "."+domain) {
 			return true
 		}

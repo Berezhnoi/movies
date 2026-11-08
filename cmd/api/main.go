@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -148,7 +149,7 @@ func run() error {
 		cancelBucket()
 		deps.TrailerStorage = trailerStorage
 		deps.Trailers = repository.NewGormTrailerRepository(db)
-		log.Printf("trailers enabled (S3 endpoint %s, bucket %s)", cfg.S3EndpointURL, cfg.S3Bucket)
+		log.Printf("trailers enabled (S3 endpoint %s, bucket %s)", redactedURL(cfg.S3EndpointURL), cfg.S3Bucket)
 	}
 
 	server := &http.Server{
@@ -183,4 +184,13 @@ func run() error {
 		}
 		return nil
 	}
+}
+
+// redactedURL hides any password in rawURL so it never reaches the logs.
+func redactedURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "(invalid URL)"
+	}
+	return parsed.Redacted()
 }

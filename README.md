@@ -133,7 +133,7 @@ Settings (read only when `TRAILERS_ENABLED=true`):
 
 | Variable | Default | Notes |
 |---|---|---|
-| `S3_ENDPOINT_URL` | — | Required, `http` or `https`. The app refuses to start if it is empty or its host is under `amazonaws.com` |
+| `S3_ENDPOINT_URL` | — | Required, `http` or `https`. The app refuses to start if it is empty or its host is under `amazonaws.com` or `api.aws` |
 | `S3_BUCKET` | — | Required. Created at startup and again on upload if Floci lost it |
 | `AWS_REGION` | `us-east-1` | |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | `test` | Dummy values for Floci only; never put real AWS keys here |
@@ -169,8 +169,10 @@ trailer, which succeeds even though the object is gone. There is no automatic cl
 
 **K3s (not verified).** `infra/k8s/config.yaml` sets the same variables with
 `S3_ENDPOINT_URL=http://floci:4566`, which pods resolve through the CoreDNS `floci` zone
-(`make -C infra k8s-dns`) to the VM, where Floci runs outside the cluster. `infra/k8s/app.yaml` adds a `/tmp`
-volume for the upload temp file. Steps: `make -C infra floci-up`, `make -C infra k8s-dns`,
+(`make -C infra k8s-dns`) to the VM, where Floci runs outside the cluster. `infra/k8s/app.yaml` adds a 512Mi `/tmp`
+volume for the upload temp files. Each upload in progress uses up to 50 MiB there, so about 9 concurrent
+uploads per pod fit; more would fill the volume and get the pod evicted, and nothing in the app limits
+concurrent uploads. Steps: `make -C infra floci-up`, `make -C infra k8s-dns`,
 `make -C infra k8s-apply`, then the smoke check above against `http://localhost:30080`. These manifest changes
 have not been run in a cluster yet; see [infra/README.md](infra/README.md#6-trailers-on-floci-s3).
 

@@ -62,11 +62,17 @@ func (memory *Memory) Get(ctx context.Context, key string, byteRange *service.By
 	if byteRange == nil {
 		return service.StoredObject{Body: io.NopCloser(bytes.NewReader(data)), ContentLength: int64(len(data))}, nil
 	}
-	part := data[byteRange.Start : byteRange.End+1]
+	// Like S3: a start past the end is 416, an end past the end is clamped.
+	size := int64(len(data))
+	if byteRange.Start < 0 || byteRange.Start >= size || byteRange.End < byteRange.Start {
+		return service.StoredObject{}, fmt.Errorf("%w: range %d-%d of %d bytes", service.ErrRangeNotSatisfiable, byteRange.Start, byteRange.End, size)
+	}
+	end := min(byteRange.End, size-1)
+	part := data[byteRange.Start : end+1]
 	return service.StoredObject{
 		Body:          io.NopCloser(bytes.NewReader(part)),
 		ContentLength: int64(len(part)),
-		ContentRange:  fmt.Sprintf("bytes %d-%d/%d", byteRange.Start, byteRange.End, len(data)),
+		ContentRange:  fmt.Sprintf("bytes %d-%d/%d", byteRange.Start, end, size),
 	}, nil
 }
 

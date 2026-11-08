@@ -129,3 +129,27 @@ func TestMemoryFaultSwitches(t *testing.T) {
 		t.Errorf("Delete() while unavailable error = %v, objects %d", err, memory.Len())
 	}
 }
+
+func TestMemoryGetRangeBounds(t *testing.T) {
+	ctx := context.Background()
+	memory := NewMemory()
+	data := bytes.Repeat([]byte{7}, 100)
+	if err := memory.Put(ctx, "trailers/1.mp4", bytes.NewReader(data), int64(len(data)), "video/mp4"); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+
+	// A range resolved against an older, larger size: the end is clamped.
+	object, err := memory.Get(ctx, "trailers/1.mp4", &service.ByteRange{Start: 90, End: 199})
+	if err != nil {
+		t.Fatalf("Get(90-199) error = %v", err)
+	}
+	if object.ContentLength != 10 || object.ContentRange != "bytes 90-99/100" {
+		t.Errorf("Get(90-199) = %d bytes, %q, want 10 bytes, bytes 90-99/100", object.ContentLength, object.ContentRange)
+	}
+
+	for _, byteRange := range []service.ByteRange{{Start: 100, End: 150}, {Start: 500, End: 599}, {Start: 50, End: 10}} {
+		if _, err := memory.Get(ctx, "trailers/1.mp4", &byteRange); !errors.Is(err, service.ErrRangeNotSatisfiable) {
+			t.Errorf("Get(%d-%d) error = %v, want ErrRangeNotSatisfiable", byteRange.Start, byteRange.End, err)
+		}
+	}
+}

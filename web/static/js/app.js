@@ -16,7 +16,7 @@ document.body.addEventListener("htmx:responseError", (event) => {
 // Trailer upload/delete errors return the section with a message; show it in place.
 document.body.addEventListener("htmx:beforeSwap", (event) => {
   if (event.detail.target?.id !== "trailer-section") return;
-  if ([413, 415, 422, 503].includes(event.detail.xhr.status)) {
+  if ([413, 415, 422, 500, 503].includes(event.detail.xhr.status)) {
     event.detail.shouldSwap = true;
     event.detail.isError = false;
   }

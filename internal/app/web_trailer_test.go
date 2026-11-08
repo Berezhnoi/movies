@@ -518,3 +518,38 @@ func TestWebTrailer_UploadRejectsBeforeReadingBody(t *testing.T) {
 		t.Errorf("HTMX upload = %d, want 200: %s", response.Code, response.Body)
 	}
 }
+
+func TestWebTrailer_UploadTooLargeRendersSection(t *testing.T) {
+	env := newWebTrailerEnv(t)
+	id := env.createMovie(t, "Too large")
+
+	response := env.upload(t, id, mp4Bytes(int(service.MaxTrailerSize)+1), "http://example.com", env.csrfToken, env.editor)
+	body := response.Body.String()
+	if response.Code != http.StatusRequestEntityTooLarge || !strings.Contains(body, `id="trailer-section"`) || !strings.Contains(body, "Trailer file must be at most 50 MiB") {
+		t.Errorf("oversized upload = %d, want 413 with the section and the size message: %.300s", response.Code, body)
+	}
+	if env.trailers.Len() != 0 || env.storage.Len() != 0 {
+		t.Errorf("oversized upload stored %d rows and %d objects", env.trailers.Len(), env.storage.Len())
+	}
+}
+
+func TestWebTrailer_StorageUnavailable(t *testing.T) {
+	env := newWebTrailerEnv(t)
+	withTrailer := env.movieWithTrailer(t, "Kept")
+	without := env.createMovie(t, "New")
+	env.storage.SetUnavailable(true)
+
+	upload := env.upload(t, without, mp4Bytes(1000), "http://example.com", env.csrfToken, env.editor)
+	if upload.Code != http.StatusServiceUnavailable || !strings.Contains(upload.Body.String(), "Trailer storage is unavailable. Please try again later.") {
+		t.Errorf("upload with storage down = %d, want 503 with the storage message: %s", upload.Code, upload.Body)
+	}
+
+	deleted := env.htmx(http.MethodDelete, "/web/movies/"+withTrailer+"/trailer", nil, "", "http://example.com", env.csrfToken, env.editor)
+	body := deleted.Body.String()
+	if deleted.Code != http.StatusServiceUnavailable || !strings.Contains(body, `id="trailer-section"`) || !strings.Contains(body, "the trailer was kept.") {
+		t.Errorf("delete with storage down = %d, want 503 with the section and the kept message: %s", deleted.Code, body)
+	}
+	if env.trailers.Len() != 1 {
+		t.Errorf("rows = %d, want the trailer row kept", env.trailers.Len())
+	}
+}

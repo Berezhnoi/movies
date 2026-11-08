@@ -151,7 +151,11 @@ func trailerUploadFailure(err error) (int, string) {
 	var tooLarge service.PayloadTooLargeError
 	var unsupported service.UnsupportedMediaTypeError
 	var validation service.ValidationError
+	var notFound service.NotFoundError
 	switch {
+	case errors.As(err, &notFound):
+		// The movie was deleted during the upload.
+		return http.StatusNotFound, notFound.Message
 	case errors.As(err, &tooLarge):
 		return http.StatusRequestEntityTooLarge, tooLarge.Error()
 	case errors.As(err, &unsupported):
