@@ -25,6 +25,7 @@ func NewRenderer() (*Renderer, error) {
 		partials + "nav.html",
 		partials + "movie_row.html",
 		partials + "movie_rows.html",
+		partials + "trailer_section.html",
 	}
 	renderer := &Renderer{pages: make(map[string]*template.Template, 5)}
 	fragmentFiles := make([]string, 0, len(partialFiles))
@@ -43,6 +44,7 @@ func NewRenderer() (*Renderer, error) {
 		"login":      "templates/pages/login.html",
 		"movie_form": "templates/pages/movie_form.html",
 		"register":   "templates/pages/register.html",
+		"trailer":    "templates/pages/trailer.html",
 	} {
 		files := append([]string{layout}, partialFiles...)
 		files = append(files, file)
@@ -90,6 +92,9 @@ func withCSRFToken(data any, token string) any {
 		page.CSRFToken = token
 		return page
 	case ChatPage:
+		page.CSRFToken = token
+		return page
+	case TrailerPage:
 		page.CSRFToken = token
 		return page
 	default:

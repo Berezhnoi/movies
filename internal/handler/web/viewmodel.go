@@ -54,6 +54,7 @@ type MovieRowView struct {
 	CanEdit     bool
 	CanDelete   bool
 	CanChat     bool
+	HasTrailer  bool
 }
 
 type ErrorPage struct {
@@ -90,6 +91,25 @@ type MovieFormPage struct {
 	Synopsis    string
 	Genres      []string
 	Errors      []string
+	// Trailer is set on the edit form when trailers are enabled.
+	Trailer *TrailerSectionView
+}
+
+// TrailerSectionView is the staff trailer control on the edit form; HTMX
+// swaps it as a whole after an upload or delete.
+type TrailerSectionView struct {
+	MovieID uint32
+	// State is "none", "ready", "unavailable" or "error".
+	State    string
+	SizeText string
+	Message  string
+}
+
+type TrailerPage struct {
+	BasePage
+	MovieID     uint32
+	MovieTitle  string
+	Unavailable bool
 }
 
 type ChatPage struct {

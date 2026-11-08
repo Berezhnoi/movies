@@ -87,3 +87,7 @@ tbody tr:last-child td { border-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+.trailer-section { max-width: 42rem; margin: 2rem 0; padding-top: 1rem; border-top: 1px solid #b6c1d1; }
+.trailer-upload { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .75rem 0; }
+.trailer-message { font-weight: 600; }
+.trailer-video { display: block; width: 100%; max-width: 48rem; margin: 1rem 0; background: #000; }

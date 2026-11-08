@@ -25,6 +25,8 @@ type CatalogHandler struct {
 	now      func() time.Time
 	// chatEnabled adds a chat link to each row for logged-in users.
 	chatEnabled bool
+	// trailers is nil when trailers are disabled; then no trailer UI is shown.
+	trailers *service.TrailerService
 }
 
 var catalogNotices = map[string]string{
@@ -33,8 +35,8 @@ var catalogNotices = map[string]string{
 	"registered": "User account created successfully.",
 }
 
-func NewCatalogHandler(catalog *service.CatalogService, movies *service.MovieService, renderer *Renderer, chatEnabled bool) *CatalogHandler {
-	return &CatalogHandler{catalog: catalog, movies: movies, renderer: renderer, now: time.Now, chatEnabled: chatEnabled}
+func NewCatalogHandler(catalog *service.CatalogService, movies *service.MovieService, trailers *service.TrailerService, renderer *Renderer, chatEnabled bool) *CatalogHandler {
+	return &CatalogHandler{catalog: catalog, movies: movies, trailers: trailers, renderer: renderer, now: time.Now, chatEnabled: chatEnabled}
 }
 
 func (handler *CatalogHandler) Root(c *gin.Context) {
@@ -175,7 +177,7 @@ func (handler *CatalogHandler) EditMoviePage(c *gin.Context) {
 	if movie.ReleaseYear != nil {
 		values.releaseYear = strconv.Itoa(*movie.ReleaseYear)
 	}
-	handler.renderMovieForm(c, http.StatusOK, editMovieFormPage(c, id, values, nil))
+	handler.renderMovieForm(c, http.StatusOK, handler.withTrailerSection(c, editMovieFormPage(c, id, values, nil), id))
 }
 
 func (handler *CatalogHandler) UpdateMovie(c *gin.Context) {
@@ -202,7 +204,8 @@ func (handler *CatalogHandler) UpdateMovie(c *gin.Context) {
 	if _, err := handler.movies.Replace(c.Request.Context(), id, body); err != nil {
 		var validation service.ValidationError
 		if errors.As(err, &validation) {
-			handler.renderMovieForm(c, http.StatusUnprocessableEntity, editMovieFormPage(c, id, values, []string{validation.Message}))
+			handler.renderMovieForm(c, http.StatusUnprocessableEntity,
+				handler.withTrailerSection(c, editMovieFormPage(c, id, values, []string{validation.Message}), id))
 			return
 		}
 		handler.renderMovieLookupError(c, err)
@@ -299,6 +302,14 @@ func editMovieFormPage(c *gin.Context, id uint32, values movieFormValues, formEr
 		Synopsis:    values.synopsis,
 		Errors:      formErrors,
 	}
+}
+
+func (handler *CatalogHandler) withTrailerSection(c *gin.Context, page MovieFormPage, id uint32) MovieFormPage {
+	if handler.trailers != nil {
+		section := handler.trailerSection(c.Request.Context(), id)
+		page.Trailer = &section
+	}
+	return page
 }
 
 func (handler *CatalogHandler) renderMovieForm(c *gin.Context, status int, page MovieFormPage) {
@@ -431,14 +442,34 @@ func (handler *CatalogHandler) movieRows(c *gin.Context, movies []model.Movie, n
 	userID, loggedIn := middleware.UserIDFrom(c)
 	canChat := handler.chatEnabled && loggedIn && userID != 0
 	role, _ := middleware.RoleFrom(c)
+	hasTrailer := handler.trailerRows(c, movies)
 	for _, movie := range movies {
 		row := MapMovie(movie, now)
 		row.CanEdit = middleware.RoleAllowed(role, "editor", "admin")
 		row.CanDelete = role == "admin"
 		row.CanChat = canChat
+		row.HasTrailer = hasTrailer[movie.ID]
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// trailerRows finds the page's trailers with one repository query and no
+// storage calls. On failure the catalog still renders, without trailer links.
+func (handler *CatalogHandler) trailerRows(c *gin.Context, movies []model.Movie) map[uint32]bool {
+	if handler.trailers == nil || len(movies) == 0 {
+		return nil
+	}
+	ids := make([]uint32, 0, len(movies))
+	for _, movie := range movies {
+		ids = append(ids, movie.ID)
+	}
+	exists, err := handler.trailers.ExistsFor(c.Request.Context(), ids)
+	if err != nil {
+		log.Printf("load catalog trailers: %v", err)
+		return nil
+	}
+	return exists
 }
 
 func (handler *CatalogHandler) searchError(c *gin.Context, status int, message string) {

@@ -7,6 +7,7 @@
   <td>{{.YearText}}</td>
   <td>{{if .StatusLabel}}<span class="badge {{.StatusClass}}">{{.StatusLabel}}</span>{{else}}-{{end}}</td>
   <td class="actions">
+    {{if .HasTrailer}}<a href="/movies/{{.ID}}/trailer" aria-label="Trailer for {{.Title}}">Trailer</a>{{end}}
     {{if .CanChat}}<a href="/movies/{{.ID}}/chat" aria-label="Chat about {{.Title}}">Chat</a>{{end}}
     {{if .CanEdit}}<a href="/movies/{{.ID}}/edit">Edit</a>{{end}}
     {{if .CanDelete}}<button type="button" class="btn-danger" hx-delete="/web/movies/{{.ID}}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this movie?" aria-label="Delete {{.Title}}">Delete</button>{{end}}

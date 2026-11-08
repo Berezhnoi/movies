@@ -74,21 +74,9 @@ func (handler *TrailerHandler) upload(c *gin.Context) {
 		apperr.WriteError(c, err)
 		return
 	}
-	if c.Request.ContentLength > MaxTrailerRequestSize {
-		apperr.WriteError(c, service.PayloadTooLargeError{})
-		return
-	}
-
-	body := &limitedBody{ReadCloser: http.MaxBytesReader(c.Writer, c.Request.Body, MaxTrailerRequestSize)}
-	c.Request.Body = body
-	file, err := trailerFilePart(c.Request)
+	trailer, created, err := ReceiveTrailer(c, handler.service, id, uint64(userID))
 	if err != nil {
-		apperr.WriteError(c, uploadError(body, err))
-		return
-	}
-	trailer, created, err := handler.service.Upload(c.Request.Context(), id, file, uint64(userID))
-	if err != nil {
-		apperr.WriteError(c, uploadError(body, err))
+		apperr.WriteError(c, err)
 		return
 	}
 	status := http.StatusOK
@@ -195,6 +183,26 @@ func (handler *TrailerHandler) delete(c *gin.Context) {
 	}
 	c.Header("Content-Length", "0")
 	c.Status(http.StatusNoContent)
+}
+
+// ReceiveTrailer reads the multipart "file" field of the request under the
+// upload size limit and stores it for an existing movie. Both the API and the
+// web upload routes use it.
+func ReceiveTrailer(c *gin.Context, trailers *service.TrailerService, movieID uint32, uploadedBy uint64) (model.Trailer, bool, error) {
+	if c.Request.ContentLength > MaxTrailerRequestSize {
+		return model.Trailer{}, false, service.PayloadTooLargeError{}
+	}
+	body := &limitedBody{ReadCloser: http.MaxBytesReader(c.Writer, c.Request.Body, MaxTrailerRequestSize)}
+	c.Request.Body = body
+	file, err := trailerFilePart(c.Request)
+	if err != nil {
+		return model.Trailer{}, false, uploadError(body, err)
+	}
+	trailer, created, err := trailers.Upload(c.Request.Context(), movieID, file, uploadedBy)
+	if err != nil {
+		return model.Trailer{}, false, uploadError(body, err)
+	}
+	return trailer, created, nil
 }
 
 func trailerFilePart(request *http.Request) (*multipart.Part, error) {

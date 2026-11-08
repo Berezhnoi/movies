@@ -42,8 +42,12 @@ type Deps struct {
 	Trailers       repository.TrailerRepository
 }
 
-// trailerUploadRoute is exempt from the global body limit; the handler applies its own.
-const trailerUploadRoute = "PUT /api/v1/movies/:id/trailer"
+// The trailer upload routes are exempt from the global body limit; their
+// handlers apply their own.
+const (
+	trailerUploadRoute    = "PUT /api/v1/movies/:id/trailer"
+	webTrailerUploadRoute = "POST /movies/:id/trailer"
+)
 
 // NewRouter creates a router and a fresh in-memory repository for each call.
 func NewRouter() http.Handler {
@@ -96,7 +100,7 @@ func newRouter(deps Deps) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	// CORS must wrap recovery so panic responses also receive CORS headers.
-	router.Use(middleware.CORS(), middleware.Recovery(), middleware.RequestLogger(), middleware.RequestBodyLimit(trailerUploadRoute))
+	router.Use(middleware.CORS(), middleware.Recovery(), middleware.RequestLogger(), middleware.RequestBodyLimit(trailerUploadRoute, webTrailerUploadRoute))
 	router.HandleMethodNotAllowed = true
 	router.RedirectTrailingSlash = false
 	router.RedirectFixedPath = false
@@ -128,7 +132,7 @@ func newRouter(deps Deps) http.Handler {
 			panic(fmt.Errorf("initialize web static files: %w", err))
 		}
 		staticFS = http.FS(files)
-		catalogHandler = webhandler.NewCatalogHandler(deps.Catalog, movieService, renderer, deps.Chat != nil)
+		catalogHandler = webhandler.NewCatalogHandler(deps.Catalog, movieService, trailerService, renderer, deps.Chat != nil)
 	}
 
 	router.GET("/health", handler.Health)
@@ -175,6 +179,11 @@ func newRouter(deps Deps) http.Handler {
 		editorWebRoutes.POST("/movies/new", catalogHandler.CreateMovie)
 		editorWebRoutes.GET("/movies/:id/edit", catalogHandler.EditMoviePage)
 		editorWebRoutes.POST("/movies/:id/edit", catalogHandler.UpdateMovie)
+		if trailerService != nil {
+			webRoutes.GET("/movies/:id/trailer", catalogHandler.TrailerPage)
+			editorWebRoutes.POST("/movies/:id/trailer", catalogHandler.UploadTrailer)
+			editorWebRoutes.DELETE("/web/movies/:id/trailer", catalogHandler.DeleteTrailer)
+		}
 		adminWebRoutes := webRoutes.Group("", webhandler.RequireRole(renderer, "admin"))
 		adminWebRoutes.DELETE("/web/movies/:id", catalogHandler.DeleteMovie)
 		adminWebRoutes.GET("/register", webAuthHandler.RegisterPage)

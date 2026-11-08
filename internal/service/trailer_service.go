@@ -178,6 +178,16 @@ func (service *TrailerService) Delete(ctx context.Context, movieID uint32) error
 	return nil
 }
 
+// ExistsFor reports which movies have a trailer row. It never calls storage,
+// so a lost object still counts.
+func (service *TrailerService) ExistsFor(ctx context.Context, movieIDs []uint32) (map[uint32]bool, error) {
+	exists, err := service.trailers.ExistsFor(ctx, movieIDs)
+	if err != nil {
+		return nil, fmt.Errorf("trailer repository: %w", err)
+	}
+	return exists, nil
+}
+
 // RemoveMovieTrailer cleans up after a movie delete. Failures are only logged,
 // so they never fail the movie delete.
 func (service *TrailerService) RemoveMovieTrailer(ctx context.Context, movieID uint32) {

@@ -1,0 +1,23 @@
+{{define "trailer_section"}}
+<section id="trailer-section" class="trailer-section" aria-labelledby="trailer-heading">
+  <h2 id="trailer-heading">Trailer</h2>
+  {{if .Message}}<p class="trailer-message" role="status">{{.Message}}</p>{{end}}
+  {{if eq .State "ready"}}
+  <p>A trailer is uploaded ({{.SizeText}}). <a href="/movies/{{.MovieID}}/trailer">Watch</a></p>
+  {{else if eq .State "unavailable"}}
+  <p>The trailer file is missing from storage. Upload it again or delete it.</p>
+  {{else if eq .State "error"}}
+  <p>Trailer storage is unavailable. Please try again later.</p>
+  {{else}}
+  <p>This movie has no trailer.</p>
+  {{end}}
+  <form class="trailer-upload" hx-post="/movies/{{.MovieID}}/trailer" hx-encoding="multipart/form-data" hx-target="#trailer-section" hx-swap="outerHTML">
+    <label for="trailer-file">MP4 file (at most 50 MiB)</label>
+    <input id="trailer-file" name="file" type="file" accept="video/mp4" required>
+    <button type="submit">{{if eq .State "none"}}Upload trailer{{else}}Replace trailer{{end}}</button>
+  </form>
+  {{if ne .State "none"}}
+  <button type="button" class="btn-danger" hx-delete="/web/movies/{{.MovieID}}/trailer" hx-target="#trailer-section" hx-swap="outerHTML" hx-confirm="Delete this trailer?">Delete trailer</button>
+  {{end}}
+</section>
+{{end}}
