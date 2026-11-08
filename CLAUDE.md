@@ -19,7 +19,7 @@ Go module `homework` (Gin + GORM + Postgres): movie catalog JSON API (JWT/RBAC) 
 
 `make` loads `.env`; most targets fail without it.
 
-- Test (CI): `go test -race -count=1 ./...` (in-memory, no DB); single: `go test -run TestX ./internal/app`
+- `make check` — quiet gofmt+vet+`-race` tests (pre-commit). Test (CI): `go test -race -count=1 ./...` (in-memory, no DB); single: `go test -run TestX ./internal/app`
 - `make test-integration` — Postgres; `TEST_DB_NAME` must end in `_test`
 - `go vet ./...`, `make fmt`, `make swagger` (after changing handler annotations)
 - `make build && make verify-isolation`; `make run`; `make migrate-create name=x`
@@ -43,6 +43,6 @@ Go module `homework` (Gin + GORM + Postgres): movie catalog JSON API (JWT/RBAC) 
 
 ## Token economy
 
-- Hooks run gofmt + `go vet` after each Go edit and a quick check on stop. Don't repeat them; run only targeted `-run` tests.
+- Hooks run gofmt + `go vet` after each Go edit and `scripts/check.sh --fast` on stop. Don't repeat them; run only targeted `-run` tests.
 - Grep before Read; read only needed line ranges. Don't re-read after editing. Pipe long output through `tail`.
 - "How/why does X work" → `docs-explorer`. Review → `go-reviewer`. Issue work → `/implement-issue`.
