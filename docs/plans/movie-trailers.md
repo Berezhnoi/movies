@@ -150,14 +150,15 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   4. Stop Floci. The trailer endpoints → 503 and `/api/v1/movies` → 200.
   5. Start the app with `S3_ENDPOINT_URL=https://s3.amazonaws.com` → it refuses to start.
 
-### T6: Compose and K3s wiring (#11)   (covers FR-12, PRD §7 Floci location)   depends on: T5
+### T6: Compose and K3s wiring (#11)   (covers FR-12, PRD §7 Floci location)   depends on: T5   **Status: Compose verified on macOS; K3s not verified in a cluster**
 - Goal: the app reaches Floci in both environments.
 - Files: `docker-compose.floci.yml` (new), `infra/k8s/config.yaml`, `infra/README.md`, and `infra/k3s-smoke.sh` if a smoke check fits there.
 - Steps:
   1. The override file attaches backend/app1/app2 to the external `floci` network and sets `TRAILERS_ENABLED=true` and `S3_ENDPOINT_URL=http://floci:4566` (D11).
   2. Add the S3 keys to the ConfigMap (D12), using the hostname confirmed in T1.
 - Tests: manual smoke. Upload a small MP4 via curl, stream it with a Range, restart Floci, and check that the response is 404 `trailer_unavailable`.
-- Verify: `make -C infra floci-up && docker compose -f docker-compose.yml -f docker-compose.floci.yml up -d --build`, then `curl -I .../api/v1/movies/1/trailer/video` returns 200. In K3s, `kubectl -n movies rollout status deploy/...` succeeds and the same curl through Traefik returns 200.
+- Verify: `make -C infra floci-up && docker compose -f docker-compose.yml -f docker-compose.floci.yml up -d --build`, then `curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-99' .../api/v1/movies/1/trailer/video` returns 206 (the video route has no HEAD handler, so `curl -I` returns 405). In K3s, `kubectl -n movies rollout status deploy/...` succeeds and the same curl through Traefik returns 206.
+- Result (2026-11-08): Docker Compose on macOS verified (upload, full GET 200, Range 206, Floci restart → 404 `trailer_unavailable`). The K3s manifest changes (`infra/k8s/config.yaml`, the `/tmp` emptyDir in `infra/k8s/app.yaml` for the upload temp file) are not verified in a cluster.
 
 ### T7: Web UI — edit form section, catalog link, watch page (#12)   (covers FR-7 UI, FR-14)   depends on: T3, T4
 - Goal: the minimal web UI under the existing CSP and CSRF rules.

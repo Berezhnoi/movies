@@ -43,6 +43,9 @@ Open `http://localhost:30080/login` and log in as `admin@movies.local`. The pass
 
 ## 6. Trailers on Floci S3
 
+Verification status: the Docker Compose wiring is verified on macOS. The K3s manifest changes
+(`k8s/config.yaml`, the `/tmp` volume in `k8s/app.yaml`) are not verified in a cluster yet.
+
 Docker Compose (repo root; the default `docker-compose.yml` still works on its own):
 
 ```sh

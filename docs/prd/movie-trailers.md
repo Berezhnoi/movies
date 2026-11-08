@@ -61,7 +61,7 @@ Out of scope (explicitly): multiple trailers or galleries, formats other than MP
 - R-1 (spike first): Floci's S3 support has not been verified. The spike checks path-style CreateBucket, Put, Get, Head and Delete, a Range GET returning 206 with `Content-Range`, the error returned for a missing key or bucket, and what is left after a restart. If Range is not supported, the fallback is a full 200 response with no seeking, and FR-6 is updated.
 - R-2: data loss on a Floci restart is by design (FR-7, FR-8, FR-11). Rows and objects can drift apart.
 - R-3: the 50 MiB upload exemption adds risk of large-body DoS. It is limited to the staff-only route.
-- R-4: networking between the separate compose projects and the K3s → VM DNS name has not been verified.
+- R-4: networking between the separate compose projects is verified with Docker Compose on macOS (T6, 2026-11-08). The K3s → VM DNS name and the K3s manifest changes (`infra/k8s/config.yaml`, the `/tmp` volume in `infra/k8s/app.yaml`) are not verified in a cluster.
 - R-5 (accepted): public streaming has no rate limiting.
 - Dependency: AWS SDK for Go v2 (S3).
 
