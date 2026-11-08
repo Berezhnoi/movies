@@ -34,6 +34,13 @@ type Config struct {
 	WSAllowedOrigins  []string
 	RedisURL          string
 	ChatHistorySize   int
+	// Trailer storage; the S3 settings are only read when TrailersEnabled is true.
+	TrailersEnabled    bool
+	S3EndpointURL      string
+	S3Bucket           string
+	AWSRegion          string
+	AWSAccessKeyID     string
+	AWSSecretAccessKey string
 }
 
 func Load() (Config, error) {
@@ -110,7 +117,48 @@ func Load() (Config, error) {
 	if cfg.ChatHistorySize <= 0 {
 		return Config{}, fmt.Errorf("CHAT_HISTORY_SIZE must be greater than zero")
 	}
+	if cfg.TrailersEnabled, err = boolValue("TRAILERS_ENABLED", false); err != nil {
+		return Config{}, err
+	}
+	if cfg.TrailersEnabled {
+		if err := loadTrailerStorage(&cfg); err != nil {
+			return Config{}, err
+		}
+	}
 	return cfg, nil
+}
+
+// loadTrailerStorage reads the S3 settings and refuses any endpoint that is
+// not a local emulator such as Floci: the app must never talk to real AWS.
+func loadTrailerStorage(cfg *Config) error {
+	var err error
+	if cfg.S3EndpointURL, err = required("S3_ENDPOINT_URL"); err != nil {
+		return fmt.Errorf("TRAILERS_ENABLED=true: %w", err)
+	}
+	endpoint, err := url.Parse(cfg.S3EndpointURL)
+	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Hostname() == "" {
+		return fmt.Errorf("S3_ENDPOINT_URL must be an http or https URL with a host")
+	}
+	if isAWSHost(endpoint.Hostname()) {
+		return fmt.Errorf("S3_ENDPOINT_URL host %q is under amazonaws.com; trailers only support a local S3 emulator such as Floci", endpoint.Hostname())
+	}
+	if cfg.S3Bucket, err = required("S3_BUCKET"); err != nil {
+		return fmt.Errorf("TRAILERS_ENABLED=true: %w", err)
+	}
+	cfg.AWSRegion = stringValue("AWS_REGION", "us-east-1")
+	cfg.AWSAccessKeyID = stringValue("AWS_ACCESS_KEY_ID", "test")
+	cfg.AWSSecretAccessKey = stringValue("AWS_SECRET_ACCESS_KEY", "test")
+	return nil
+}
+
+func isAWSHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	for _, domain := range []string{"amazonaws.com", "amazonaws.com.cn"} {
+		if host == domain || strings.HasSuffix(host, "."+domain) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c Config) PostgresDSN() string {

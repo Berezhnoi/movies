@@ -23,6 +23,7 @@ import (
 	"homework/internal/chat"
 	"homework/internal/config"
 	"homework/internal/repository"
+	"homework/internal/storage"
 	"homework/internal/webhook"
 )
 
@@ -120,18 +121,41 @@ func run() error {
 	}
 	go chatHub.Run(signalCtx)
 
+	deps := app.Deps{
+		Movies:             repository.NewGormMovieRepository(db),
+		Users:              users,
+		Tokens:             tokens,
+		EnableSwagger:      true,
+		WebUIEnabled:       &cfg.WebUIEnabled,
+		CookieSecure:       cfg.CookieSecure,
+		Chat:               chatHub,
+		ChatAllowedOrigins: cfg.WSAllowedOrigins,
+	}
+	if cfg.TrailersEnabled {
+		trailerStorage := storage.NewS3(storage.S3Config{
+			Endpoint:        cfg.S3EndpointURL,
+			Bucket:          cfg.S3Bucket,
+			Region:          cfg.AWSRegion,
+			AccessKeyID:     cfg.AWSAccessKeyID,
+			SecretAccessKey: cfg.AWSSecretAccessKey,
+		})
+		// A failure here is only logged: Put recreates the bucket, and
+		// trailer endpoints answer 503 while S3 is down.
+		bucketCtx, cancelBucket := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := trailerStorage.EnsureBucket(bucketCtx); err != nil {
+			log.Printf("trailers: ensure bucket %q: %v", cfg.S3Bucket, err)
+		}
+		cancelBucket()
+		deps.TrailerStorage = trailerStorage
+		deps.Trailers = repository.NewGormTrailerRepository(db)
+		log.Printf("trailers enabled (S3 endpoint %s, bucket %s)", cfg.S3EndpointURL, cfg.S3Bucket)
+	}
+
 	server := &http.Server{
-		Addr: ":" + strconv.Itoa(cfg.AppPort),
-		Handler: webhook.MarkAdminRegistration(app.NewRouterWithDeps(app.Deps{
-			Movies:             repository.NewGormMovieRepository(db),
-			Users:              users,
-			Tokens:             tokens,
-			EnableSwagger:      true,
-			WebUIEnabled:       &cfg.WebUIEnabled,
-			CookieSecure:       cfg.CookieSecure,
-			Chat:               chatHub,
-			ChatAllowedOrigins: cfg.WSAllowedOrigins,
-		})),
+		Addr:    ":" + strconv.Itoa(cfg.AppPort),
+		Handler: webhook.MarkAdminRegistration(app.NewRouterWithDeps(deps)),
+		// Only the header read is bounded: ReadTimeout or WriteTimeout would
+		// cut off a 50 MiB trailer upload or a long stream.
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

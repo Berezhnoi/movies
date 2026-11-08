@@ -56,3 +56,18 @@ Notes:
 No FR needs to change. FR-6, FR-7, FR-8 and FR-11 match the observed behaviour.
 
 Proposed risk R-6 (not yet in the PRD): Floci does not check request signatures, and `infra/floci/docker-compose.yml` publishes `4566` on all interfaces, so anyone on the network can read or overwrite trailers. Accept it for the lab, or bind the port to `127.0.0.1`.
+
+## T5 manual check (#10)
+
+Date: 2026-11-08. The app ran locally with `make run APP_PORT=8090 REDIS_URL= TRAILERS_ENABLED=true S3_ENDPOINT_URL=http://localhost:4566 S3_BUCKET=trailers` against `floci/floci:2.2.0`, after `make migrate-up` applied 000004. An editor token was used for uploads.
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | `S3_ENDPOINT_URL=https://s3.amazonaws.com` | refuses to start: `S3_ENDPOINT_URL host "s3.amazonaws.com" is under amazonaws.com ...` |
+| 2 | Upload a 1000-byte MP4 | 201 |
+| 3 | Full GET | 200, `video/mp4`, `Accept-Ranges: bytes`, `nosniff`, identical bytes |
+| 4 | `Range: bytes=0-99` | 206, `Content-Range: bytes 0-99/1000`, 100 identical bytes |
+| 5 | `docker restart` Floci | metadata and stream 404 `trailer_unavailable` |
+| 6 | Re-upload after the restart | 200 (replace, since the row was kept); the bucket was recreated |
+| 7 | `docker stop` Floci | metadata 503 `storage_unavailable` (after about 1.8 s of SDK retries); `/api/v1/movies` 200 |
+| 8 | 49 MiB upload and stream | upload 200 in 0.84 s, stream 200 in 0.37 s, identical bytes, no timeout |
