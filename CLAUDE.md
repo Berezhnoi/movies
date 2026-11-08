@@ -45,4 +45,4 @@ Go module `homework` (Gin + GORM + Postgres): movie catalog JSON API (JWT/RBAC) 
 
 - Hooks run gofmt + `go vet` after each Go edit and `scripts/check.sh --fast` on stop. Don't repeat them; run only targeted `-run` tests.
 - Grep before Read; read only needed line ranges. Don't re-read after editing. Pipe long output through `tail`.
-- "How/why does X work" → `docs-explorer`. Review → `go-reviewer`. Issue work → `/implement-issue`.
+- "How/why does X work" → `docs-explorer`. Review → `go-reviewer`. Security → `/security-check`. Issue work → `/implement-issue`. Habits: `docs/claude-workflow.md`.
