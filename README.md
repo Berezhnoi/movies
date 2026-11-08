@@ -141,6 +141,28 @@ make swagger                                 # regenerate docs/ after changing h
 make verify-isolation                        # build the binary and run it from an empty directory
 ```
 
+### Test database
+
+`make test-integration` truncates tables, so it needs its own database next to the dev one, in the same
+Postgres container:
+
+- `DB_NAME` is the dev database (for example `movies`). Don't give it a `_test` suffix.
+- `TEST_DB_NAME` must end in `_test` and differ from `DB_NAME` (for example `movies_test`). `make test-db`
+  and the tests refuse to run otherwise.
+- `TEST_DATABASE_URL` (host, `127.0.0.1:$DB_PORT`) and `TEST_DATABASE_DOCKER_URL` (compose network, `db:5432`)
+  must both name `TEST_DB_NAME`.
+
+`make test-db` creates `TEST_DB_NAME` if it is missing, so `DB_USER` needs the `CREATEDB` right. On a fresh
+volume `DB_USER` is the container's superuser and already has it. If the volume was created with another
+user, or the role was changed, grant it as a superuser:
+
+```sh
+docker compose exec db psql -U <superuser> -d postgres -c 'ALTER ROLE "<DB_USER>" CREATEDB'
+```
+
+Alternatively, recreate the volume (`docker compose down -v`, which deletes the dev data) or create the
+database once by hand as a superuser.
+
 ## Deployment
 
 `infra/` deploys the app to a local lab: K3s on a Vagrant VM, plus Floci, a local AWS emulator, running the
