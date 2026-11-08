@@ -179,7 +179,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   - `audit_test.go` still passes
 - Verify: `go test -race -count=1 ./internal/app ./internal/handler/web` passes. A manual check in the browser via `make run` with Floci shows no CSP console errors and seeking works.
 
-### T8: Docs — README, .env.example, Swagger (#13)   (covers DoD)   depends on: T5, T6, T7
+### T8: Docs — README, .env.example, Swagger (#13)   (covers DoD)   depends on: T5, T6, T7   **Status: done; `.env.example` lines handed to the user to apply**
 - Files: `README.md`, `.env.example` (new), `docs/` (generated), and the handler swag annotations.
 - Steps:
   1. Fix README.md:57 to say the catalog is public.
@@ -188,7 +188,7 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
   4. Run `make swagger`.
 - Verify: `make swagger` produces a clean diff limited to the trailer paths. `go test -race ./...` passes.
 
-### T9: Full verification (#14)   (covers all NFR compatibility)   depends on: T8
+### T9: Full verification (#14)   (covers all NFR compatibility)   depends on: T8   **Status: done, see §10**
 - Steps:
   1. Run `gofmt -l .` (empty), `go vet ./...`, and `go test -race -timeout 180s ./...` outside the sandbox.
   2. Run `make build && make verify-isolation`.
@@ -250,3 +250,73 @@ CI tests use the in-memory fake. Floci tests are skipped unless `TEST_S3_ENDPOIN
 - [ ] `.env.example` is updated with the new variables
 - [ ] The Movie contract and `NewRouter()` are unchanged, and the existing tests pass
 - [ ] The go-review-best-practices review is done and its findings are resolved
+
+## 10. Verification (T9, #14)
+Date: 2026-11-08, macOS, Go from `go.mod`, Floci `floci/floci:2.2.0`, at commit `e1541f6` plus this note.
+
+### Commands
+| Check | Result |
+|---|---|
+| `gofmt -l .` | empty |
+| `go vet ./...` | pass |
+| `go build ./...` | pass |
+| `go test -race -count=1 ./...` (no Floci, no DB) | pass, all packages (`internal/app` 33 s) |
+| `TEST_S3_ENDPOINT=http://localhost:4566 go test -race -count=1 ./internal/storage` | pass: `TestS3PutHeadGetRange`, `TestS3MissingKey`, `TestS3MissingBucketThenPutRecreatesIt`, `TestS3UnreachableIsUnavailable` |
+| Integration tests against a temporary `postgres:16-alpine` container (DB `movies_it_test`, migrations 1–4 up), same `go test -run` as `make test-integration` | pass: movie, user, search and `TestGormTrailerRepositoryIntegration` (incl. cascade). `migrate down -all` also clean. The container was removed afterwards |
+| `make build` | pass |
+| `make verify-isolation` | **not green, environment**: the script needs `DB_PORT` (unset in `.env`), and with that given the binary stops on `REDIS_URL=redis://redis:6379` from `.env` (the host cannot resolve `redis`; a command-line override did not take effect). The script is unchanged on this branch. The static-binary dependency check passed |
+
+`make test-integration` itself was not used, because its `test-db` step runs against the dev `db` compose service, not a temporary container.
+
+### Real stack in Docker Compose
+`make -C infra floci-up`, then `docker compose -f docker-compose.yml -f docker-compose.floci.yml up -d --build` (backend rebuilt at HEAD). A temporary editor/admin user and movie were created through the API and deleted afterwards.
+
+| Step | Result |
+|---|---|
+| Upload 4000-byte MP4 | 201, metadata with movie id, `video/mp4`, size, `uploaded_at` |
+| Full GET | 200, identical bytes, `Content-Type: video/mp4`, `Accept-Ranges: bytes`, `X-Content-Type-Options: nosniff`, `Content-Length: 4000` |
+| `Range: bytes=0-99` | 206, `Content-Range: bytes 0-99/4000`, 100 identical bytes |
+| `Range: bytes=9000-` | 416, `Content-Range: bytes */4000` |
+| Multi-range `0-1,5-9` | 200 |
+| `docker restart` Floci | metadata and stream 404 `trailer_unavailable`, row kept; web watch page shows "Trailer unavailable" (status 404) |
+| Re-upload (new file) | 200, stream returns the new bytes, Range 206, one row |
+| Delete without token / with token | 401 / 204; metadata afterwards 404 `not_found` |
+| Floci stopped | upload, metadata, stream and trailer delete 503 `storage_unavailable`, row kept; `/api/v1/movies` and `/catalog` 200 |
+| Admin movie delete with Floci stopped | 204, trailer row removed (object delete only logged) |
+| Backend logs | movie id in the upload, delete, lost-object and storage-error lines; no AWS keys |
+
+Side effect: the Floci restart and stop also wiped the objects of two trailers uploaded by another user during the run (movies 1 and 4). Their rows remain, so they now return `trailer_unavailable` until they are uploaded again (FR-7 by design).
+
+### Not run
+- Browser checks (FR-14): `<video>` playback and seeking, and the absence of CSP console errors. Covered only by `web_trailer_test` (markup, CSP header) and the HTTP-level Range checks above.
+- K3s: `infra/k8s/config.yaml`, the `/tmp` volume in `infra/k8s/app.yaml`, and pod → `floci:4566` DNS (Q-2). No cluster available.
+- A near-50 MiB upload and stream in this run (done in T5: 49 MiB, no timeout).
+
+### Traceability check
+| Requirement | Evidence | Status |
+|---|---|---|
+| FR-1 upload | `TestTrailer_UploadThenStream`, `TestGormTrailerRepositoryIntegration`, Floci tests, compose | covered |
+| FR-2 replace | `TestTrailer_ReplaceReturnsNewBytes` (1 object, 1 row), `TestTrailerUploadRepositoryFailsAfterPut`, `TestTrailer_UploadRepositoryFailure`, compose | covered |
+| FR-3 validation + order | `TestTrailer_UploadValidation`, `TestTrailer_UploadCheckOrder`, `TestTrailer_DeleteAuthAndID` | covered |
+| FR-4 auth | `TestTrailer_UploadCheckOrder` (401/403/editor/admin), `TestTrailerUploadWithoutUserIsUnauthorized`, public reads in `TestTrailer_UploadThenStream` | covered |
+| FR-5 metadata + HEAD | `TestTrailer_UploadThenStream`, `TestTrailer_ReadsWithoutTrailer`, `TestTrailer_LostObject` | covered |
+| FR-6 stream / range / headers | `TestTrailer_StreamRanges`, `TestParseByteRange`, `TestS3PutHeadGetRange`, compose | covered |
+| FR-7 lost object / bucket | `TestTrailer_LostObject`, `TestTrailer_LostBucket`, `TestWebTrailer_WatchPage`, `TestS3MissingKey`, compose | covered |
+| FR-8 stale cleanup | `TestTrailer_DeleteStaleRecord` | covered |
+| FR-9 delete | `TestTrailer_Delete`, compose | covered |
+| FR-10 movie delete | `TestTrailer_MovieDeleteRemovesTrailer`, `TestTrailer_MovieDeleteIgnoresStorageFailure`, `TestTrailerRemoveMovieTrailerOnlyLogs`, integration cascade, compose | covered |
+| FR-11 bucket recovery | `TestTrailer_LostBucket`, `TestS3MissingBucketThenPutRecreatesIt`, compose re-upload after restart | covered |
+| FR-12 storage down | `TestTrailer_StorageUnavailable`, `TestS3UnreachableIsUnavailable`, compose | covered |
+| FR-13 real-AWS guard | `TestLoadTrailersGuardsS3Endpoint`, `TestLoadTrailerS3Defaults`, T5 manual start refusal | covered (startup log message: manual only) |
+| FR-14 web UI | `web_trailer_test` (controls by role, CSRF/Origin, catalog link from rows, watch page, CSP, disabled) | covered except real browser playback (not run) |
+| NFR compatibility | full suite green, `TestTrailer_RoutesAbsentWithoutStorage`, Swagger diff additions only | covered |
+| NFR body cap | `TestTrailer_GlobalBodyLimitStillApplies`, `TestTrailer_UploadOverGlobalBodyLimit`, `TestRequestBodyLimitExemptsOnlyMethodAndPath`, `TestWebTrailer_UploadRequiresCSRFAndOrigin` (2 MiB) | covered |
+| NFR CSRF/Origin on web upload | `TestWebTrailer_UploadRequiresCSRFAndOrigin`, `TestWebTrailer_UploadRejectsBeforeReadingBody` | covered |
+| NFR timeouts | `cmd/api/main.go` sets only `ReadHeaderTimeout` (read); T5 49 MiB manual | review + manual only |
+| NFR security | header and error-shape asserts, config tests, `TestWebTrailer_CSPUnchanged`, fixed key used by `DropObject` in tests, no creds in compose logs | covered; "no creds in logs" is manual only |
+| NFR testability | suite green without Floci; Floci tests skip without `TEST_S3_ENDPOINT` | covered |
+| NFR performance | — | **review only (T10)** |
+| NFR observability | log asserts for lost object, delete, storage error, object-not-removed | partly: the "trailer uploaded" log has no test (seen in compose logs) |
+| NFR simplicity | — | **review only (T10)** |
+
+Uncovered by automated tests: real browser playback/seeking and CSP console (FR-14), the K3s wiring, the startup refusal log line (FR-13), the upload log line, the timeout NFR, no-creds-in-logs, performance and simplicity (left to the T10 review).
