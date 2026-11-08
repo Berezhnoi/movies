@@ -1,50 +1,48 @@
 # CLAUDE.md
 
-Keep your replies extremely concise and focus on conveying the key information. No unnecessary fluff, no long code snipepts.
+Be extremely concise. No fluff, no long code snippets.
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Go module `homework` (Gin + GORM + Postgres): movie catalog JSON API (JWT/RBAC) + HTMX web UI, one binary. CI-graded homework. Routes/config/security: `README.md`.
 
-Go (module `homework`, Gin + GORM + PostgreSQL) movie catalog: JSON API with JWT/RBAC plus a server-rendered HTMX web UI, shipped as one binary. This is a course homework repo graded by CI. See `README.md` for routes, config and the security model.
+## Layout
+
+- `cmd/api` server, `cmd/seed` first admin
+- `internal/app` router wiring + most integration tests
+- `internal/handler` JSON API; `handler/web` UI handlers + middleware
+- `internal/service` business rules; `internal/repository` GORM + in-memory
+- `internal/{auth,middleware,apperr,config,model}` JWT, RBAC, error mapping, env config, models
+- `internal/chat` WebSocket hub; `internal/webhook` signed events; `internal/storage` trailers (S3/in-memory)
+- `web/` embedded templates + static; `migrations/` SQL; `docs/` swagger (generated)
+- `functions/notifier` separate module (Lambda); `infra/` VM/Terraform/K3s (`make -C infra`)
 
 ## Commands
 
-`make` includes and exports `.env` (copy from `.env.example` first), so most targets fail without it.
+`make` loads `.env`; most targets fail without it.
 
-```sh
-go test -race -count=1 ./...                         # full suite; in-memory, no DB needed (what CI runs)
-go test -race -count=1 ./internal/app -run TestRBAC   # single test / group
-make test                                            # same, unsets TEST_DATABASE_URL
-make test-integration                                # Postgres repository tests; needs TEST_DB_NAME ending in _test
-go vet ./...
-make fmt                                             # gofmt -w
-make swagger                                         # regenerate docs/ (swag v1.16.4) after changing handler annotations
-make build && make verify-isolation                  # static binary in bin/, then run it from an empty dir to prove embeds work
-make db-up && make migrate-up && make seed-admin && make run   # local stack (API + UI on :8080)
-make migrate-create name=add_foo                     # new sequential up/down migration pair
-```
+- Test (CI): `go test -race -count=1 ./...` (in-memory, no DB); single: `go test -run TestX ./internal/app`
+- `make test-integration` — Postgres; `TEST_DB_NAME` must end in `_test`
+- `go vet ./...`, `make fmt`, `make swagger` (after changing handler annotations)
+- `make build && make verify-isolation`; `make run`; `make migrate-create name=x`
 
-`functions/notifier` is a separate Go module (Lambda); test it from that directory. Cloud lab (VM, Floci, Terraform, K3s) is driven by `make -C infra ...` — see `infra/README.md`.
+**CI fails on:** gofmt, `go vet`, `go test -race` (180s timeout).
 
-## CI constraints (do not break)
+## Never
 
-- CI fails on any of: gofmt, `go vet`, or `go test -race` with a 180s timeout.
+- Change API contracts: routes, status codes, error JSON `{"error":{"code","message"}}`, roles.
+- Read or edit `.env*`; `git push`; `terraform apply/destroy` (user does these).
+- Hand-edit `docs/docs.go`/`docs/swagger.*` (run `make swagger`) or vendored `htmx.min.js`.
 
 ## Architecture
 
-**Wiring lives in `internal/app/app.go`**, not in `cmd/`. The contract tests talk to the API only through `app.NewRouter()`, which builds an **unprotected** router (`Deps.Secure=false`): an in-memory movie repo, all API routes registered without auth middleware, and no web UI. `cmd/api/main.go` uses `NewRouterWithDeps`, which forces `Secure=true`: GORM repositories, JWT/RBAC route groups, Swagger, and the web UI when `WEB_UI_ENABLED`. Changing routing or middleware can therefore affect both modes. Check both test paths (`movies_*_test.go` for unprotected and `rbac_test.go`/`web_*_test.go` for secured).
+- Wiring in `internal/app/app.go`. `app.NewRouter()` = unprotected (in-memory repo, no auth, no UI) used by contract tests `movies_*_test.go`. `NewRouterWithDeps` (main) = secure: GORM, JWT/RBAC, Swagger, UI if `WEB_UI_ENABLED`; tested by `rbac_test.go`/`web_*_test.go`. Routing/middleware changes affect both — run both.
+- `handler` → `service` → `repository`. In-memory and GORM repos must behave identically. RBAC = which group (`public/protected/staff/admin`) a route registers on. Return typed service errors; `apperr.WriteError` maps to HTTP — no status codes in handlers.
+- Auth: API = Bearer header only, never cookies. UI = `access_token` HttpOnly cookie + CSRF + Origin check. CSP: no inline JS/CSS → `web/static/js/app.js`.
+- Templates: one set per page (`title`/`content` blocks) + partial set for HTMX. `html/template` only, no `template.HTML` etc. (enforced by `web/audit_test.go`). HTMX delete → empty 200.
+- Chat: hub single-owner (only `Run` touches `rooms`). Broker local or Redis (`REDIS_URL`); Redis tests need `TEST_REDIS_URL`.
+- Webhook fires only on admin web registration. Config env-only, strict booleans, `JWT_SECRET` ≥32 bytes.
 
-Layering: `handler` → `service` → `repository` (interfaces with both in-memory and GORM implementations; keep them behaviorally equivalent, since tests use in-memory and production uses GORM). `handler.RegisterAPI` takes `public/protected/staff/admin` Gin groups, so RBAC is applied by which group a route is registered on (`middleware.RequireRole`). Service errors (`ValidationError`, `NotFoundError`, `ErrForbidden`, ...) map to HTTP status and JSON in `internal/apperr.WriteError`; return those typed errors rather than writing status codes in handlers.
+## Token economy
 
-Catalog search is a separate `MovieSearcher` capability (`repository.NewMovieSearcher`) with GORM, in-memory, and fallback implementations, used by `service.CatalogService` for the web UI.
-
-**Two auth surfaces:**
-- JSON API: `Authorization: Bearer` header only; it never authenticates from cookies.
-- Web UI (`internal/handler/web`): JWT in the `access_token` HttpOnly, SameSite=Lax cookie (`COOKIE_SECURE` controls Secure). Its own middleware handles CSRF tokens + Origin host check on state-changing requests, `OptionalAuth`, and `RequireRole`. CSP forbids inline scripts/styles, so put JS in `web/static/js/app.js`, not in templates.
-
-**Templates**: `web/` embeds templates and static assets via `go:embed`. The renderer parses one template set per page (pages share `title`/`content` block names) plus a separate partial set for HTMX fragments. Use only `html/template` and no trusted types (`template.HTML` etc.). `internal/handler/web/audit_test.go` enforces this via AST checks. HTMX is vendored (`web/static/js/htmx.min.js`, see `VENDORED.txt`). HTMX delete must return an empty 200.
-
-**Chat**: `internal/chat` hub is single-owner (only `Run` touches `rooms`; others send on channels). Room messages go through a `broker`: local (default) or Redis when `REDIS_URL` is set (pub/sub `chat:movie:*` + capped history list). Redis tests in `internal/app/chat_redis_test.go` skip unless `TEST_REDIS_URL` is set; `docker compose --profile scale up` runs two instances on :8081/:8082.
-
-**Webhook**: `internal/webhook` decorates the `UserRepository` when `WEBHOOK_URL` is set and sends an HMAC-signed async `user.created` event. It fires only for admin web registration (`MarkAdminRegistration` wraps the handler), not for public API registration.
-
-Config is env-only (`internal/config`). Booleans like `WEB_UI_ENABLED` and `COOKIE_SECURE` are parsed strictly. `JWT_SECRET` must be ≥32 bytes.
+- Hooks run gofmt + `go vet` after each Go edit and a quick check on stop. Don't repeat them; run only targeted `-run` tests.
+- Grep before Read; read only needed line ranges. Don't re-read after editing. Pipe long output through `tail`.
+- "How/why does X work" → `docs-explorer`. Review → `go-reviewer`. Issue work → `/implement-issue`.
