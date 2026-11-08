@@ -2,7 +2,7 @@
 
 Be extremely concise. No fluff, no long code snippets.
 
-Go module `homework` (Gin + GORM + Postgres): movie catalog JSON API (JWT/RBAC) + HTMX web UI, one binary. CI-graded homework. Routes/config/security: `README.md`.
+Go module `homework` (Gin + GORM + Postgres): movie catalog JSON API (JWT/RBAC) + HTMX web UI, one binary. CI-graded homework. Routes/config/security: `README.md`. All docs: `docs/INDEX.md`.
 
 ## Layout
 

@@ -1,6 +1,6 @@
 # Plan: Movie trailers (Floci S3)
 Tracking issue: #16
-PRD: docs/prd/movie-trailers.md   Status: approved   Date: 2026-11-08
+PRD: docs/archive/prd-movie-trailers.md   Status: approved   Date: 2026-11-08
 
 ## 1. Summary
 The work starts with a spike against Floci S3. After that comes a vertical API slice: a trailer table, a `TrailerStorage` interface in `service` with an in-memory fake, a `TrailerService`, and handlers, giving upload then stream end to end through `NewRouterWithDeps`.
